@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spectator - Hand Pose Game</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
     <div class="page spectator-page">
@@ -92,124 +93,128 @@
     <script>
         class SpectatorClient {
             constructor() {
-                this.activeFrameRequests = 0;
-                this.lastFrameTime = 0;
-                this.startStatePolling();
-                this.startFramePolling();
+                this.setupSocket();
             }
 
-            startStatePolling() {
-                setInterval(() => this.updateGameState(), 500); 
-                this.updateGameState();
+            setupSocket() {
+                this.socket = io();
+                
+                this.socket.on('connect', () => {
+                    console.log('Connected to server');
+                });
+
+                this.socket.on('gameState', (state) => {
+                    this.handleGameState(state);
+                });
+
+                this.socket.on('playerPoseUpdate', (data) => {
+                    this.handlePlayerPoseUpdate(data);
+                });
+
+                this.socket.on('disconnect', () => {
+                    console.log('Disconnected from server');
+                });
             }
 
-            startFramePolling() {
-                setInterval(() => this.updateCameraFrames(), 33); 
-            }
+            handleGameState(state) {
+                document.getElementById('gameModeText').textContent = state.gameMode.toUpperCase();
 
-            async updateGameState() {
-                try {
-                    const response = await fetch('/api/spectator/state?frames=false'); 
-                    const state = await response.json();
+                if (state.currentTask) {
+                    document.getElementById('currentTaskName').textContent = state.currentTask.name;
+                    document.getElementById('currentTaskDesc').textContent = state.currentTask.description;
+                } else {
+                    document.getElementById('currentTaskName').textContent = 'Waiting for game...';
+                    document.getElementById('currentTaskDesc').textContent = '';
+                }
 
-                    document.getElementById('gameModeText').textContent = state.gameMode.toUpperCase();
+                const minutes = Math.floor(state.timer / 60);
+                const seconds = state.timer % 60;
+                document.getElementById('gameTimer').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-                    if (state.currentTask) {
-                        document.getElementById('currentTaskName').textContent = state.currentTask.name;
-                        document.getElementById('currentTaskDesc').textContent = state.currentTask.description;
+                this.updatePlayerUI(1, state.player1);
+                this.updatePlayerUI(2, state.player2);
+
+                if (state.roundComplete && state.winner) {
+                    const announcement = document.getElementById('winnerAnnouncement');
+                    const winnerText = document.getElementById('winnerText');
+                    
+                    if (state.winner === 'tie') {
+                        winnerText.textContent = "Final Result: It's a Tie!";
+                    } else if (state.winner === 'player1') {
+                        winnerText.textContent = '🎉 Player 1 Wins the Game! 🎉';
                     } else {
-                        document.getElementById('currentTaskName').textContent = 'Waiting for game...';
-                        document.getElementById('currentTaskDesc').textContent = '';
+                        winnerText.textContent = '🎉 Player 2 Wins the Game! 🎉';
                     }
-
-                    const minutes = Math.floor(state.timer / 60);
-                    const seconds = state.timer % 60;
-                    document.getElementById('gameTimer').textContent = 
-                        `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-                    document.getElementById('player1Score').textContent = state.player1.score;
-                    document.getElementById('player1Prediction').textContent = 
-                        state.player1.prediction || '-';
-                    document.getElementById('player1Confidence').textContent = 
-                        state.player1.poseConfidence ? (state.player1.poseConfidence * 100).toFixed(0) + '%' : '-';
-                    document.getElementById('player1Ready').textContent = 
-                        state.player1.ready ? '✓ Ready' : 'Not Ready';
-                    document.getElementById('player1Ready').classList.toggle('ready', state.player1.ready);
-
-                    document.getElementById('player2Score').textContent = state.player2.score;
-                    document.getElementById('player2Prediction').textContent = 
-                        state.player2.prediction || '-';
-                    document.getElementById('player2Confidence').textContent = 
-                        state.player2.poseConfidence ? (state.player2.poseConfidence * 100).toFixed(0) + '%' : '-';
-                    document.getElementById('player2Ready').textContent = 
-                        state.player2.ready ? '✓ Ready' : 'Not Ready';
-                    document.getElementById('player2Ready').classList.toggle('ready', state.player2.ready);
-
-                    if (state.roundComplete && state.winner) {
-                        const announcement = document.getElementById('winnerAnnouncement');
-                        const winnerText = document.getElementById('winnerText');
-                        
-                        if (state.winner === 'tie') {
-                            winnerText.textContent = "Final Result: It's a Tie!";
-                        } else if (state.winner === 'player1') {
-                            winnerText.textContent = '🎉 Player 1 Wins the Game! 🎉';
-                        } else {
-                            winnerText.textContent = '🎉 Player 2 Wins the Game! 🎉';
-                        }
-                        
-                        announcement.style.display = 'block';
-                        document.getElementById('gameStatusText').textContent = 'Game Over! Resetting soon...';
-                    } else if (state.countdown > 0) {
-                        document.getElementById('winnerAnnouncement').style.display = 'none';
-                        document.getElementById('currentTaskName').textContent = 'READY?';
-                        document.getElementById('currentTaskDesc').textContent = `Starting in ${state.countdown}...`;
-                        document.getElementById('gameStatusText').textContent = 'Get ready to pose!';
-                    } else if (state.gameActive) {
-                        document.getElementById('winnerAnnouncement').style.display = 'none';
-                        
-                        if (state.roundWinner) {
-                            const winner = state.roundWinner === 'player1' ? 'Player 1' : 'Player 2';
-                            document.getElementById('gameStatusText').textContent = `✨ ${winner} scored a point! ✨`;
-                        } else {
-                            document.getElementById('gameStatusText').textContent = 'Match the pose as fast as you can!';
-                        }
-                    } else if (state.player1.ready && state.player2.ready) {
-                        document.getElementById('winnerAnnouncement').style.display = 'none';
-                        document.getElementById('gameStatusText').textContent = 'Both players ready! Countdown starting...';
+                    
+                    announcement.style.display = 'block';
+                    document.getElementById('gameStatusText').textContent = 'Game Over! Resetting soon...';
+                } else if (state.countdown > 0) {
+                    document.getElementById('winnerAnnouncement').style.display = 'none';
+                    document.getElementById('currentTaskName').textContent = 'READY?';
+                    document.getElementById('currentTaskDesc').textContent = `Starting in ${state.countdown}...`;
+                    document.getElementById('gameStatusText').textContent = 'Get ready to pose!';
+                } else if (state.gameActive) {
+                    document.getElementById('winnerAnnouncement').style.display = 'none';
+                    
+                    if (state.roundWinner) {
+                        const winner = state.roundWinner === 'player1' ? 'Player 1' : 'Player 2';
+                        document.getElementById('gameStatusText').textContent = `✨ ${winner} scored a point! ✨`;
                     } else {
-                        document.getElementById('winnerAnnouncement').style.display = 'none';
-                        document.getElementById('gameStatusText').textContent = 'Waiting for players to be ready...';
+                        document.getElementById('gameStatusText').textContent = 'Match the pose as fast as you can!';
                     }
-                } catch (error) {
-                    console.error('Error updating game state:', error);
+                } else if (state.player1.ready && state.player2.ready) {
+                    document.getElementById('winnerAnnouncement').style.display = 'none';
+                    document.getElementById('gameStatusText').textContent = 'Both players ready! Countdown starting...';
+                } else {
+                    document.getElementById('winnerAnnouncement').style.display = 'none';
+                    document.getElementById('gameStatusText').textContent = 'Waiting for players to be ready...';
                 }
             }
 
-            async updateCameraFrames() {
-                if (this.activeFrameRequests >= 3) return;
+            handlePlayerPoseUpdate(data) {
+                const playerNum = data.playerNum;
+                document.getElementById(`player${playerNum}Prediction`).textContent = 
+                    data.prediction || '-';
+                document.getElementById(`player${playerNum}Confidence`).textContent = 
+                    data.confidence ? (data.confidence * 100).toFixed(0) + '%' : '-';
                 
-                const requestTime = Date.now();
-                try {
-                    this.activeFrameRequests++;
-                    const response = await fetch('/api/spectator/state?frames=true');
-                    const state = await response.json();
-                    
-                    if (requestTime > this.lastFrameTime) {
-                        this.lastFrameTime = requestTime;
-                        
-                        if (state.player1.cameraFrame) {
-                            const prefix = state.player1.cameraFrame.startsWith('data:image') ? '' : 'data:image/jpeg;base64,';
-                            document.getElementById('player1Camera').src = prefix + state.player1.cameraFrame;
-                        }
-                        
-                        if (state.player2.cameraFrame) {
-                            const prefix = state.player2.cameraFrame.startsWith('data:image') ? '' : 'data:image/jpeg;base64,';
-                            document.getElementById('player2Camera').src = prefix + state.player2.cameraFrame;
-                        }
+                if (data.cameraFrame) {
+                    this.updatePlayerCamera(playerNum, data.cameraFrame);
+                }
+
+                if (data.score !== undefined) {
+                    document.getElementById(`player${playerNum}Score`).textContent = data.score;
+                }
+            }
+
+            updatePlayerUI(num, playerState) {
+                document.getElementById(`player${num}Score`).textContent = playerState.score;
+                document.getElementById(`player${num}Prediction`).textContent = 
+                    playerState.prediction || '-';
+                document.getElementById(`player${num}Confidence`).textContent = 
+                    playerState.poseConfidence ? (playerState.poseConfidence * 100).toFixed(0) + '%' : '-';
+                document.getElementById(`player${num}Ready`).textContent = 
+                    playerState.ready ? '✓ Ready' : 'Not Ready';
+                document.getElementById(`player${num}Ready`).classList.toggle('ready', playerState.ready);
+
+                if (playerState.cameraFrame) {
+                    this.updatePlayerCamera(num, playerState.cameraFrame);
+                }
+            }
+
+            updatePlayerCamera(num, frameData) {
+                const img = document.getElementById(`player${num}Camera`);
+                if (typeof frameData !== 'string') {
+                    const blob = new Blob([frameData], { type: 'image/jpeg' });
+                    const url = URL.createObjectURL(blob);
+                    if (img.src && img.src.startsWith('blob:')) {
+                        URL.revokeObjectURL(img.src);
                     }
-                } catch (error) {
-                } finally {
-                    this.activeFrameRequests--;
+                    img.src = url;
+                } else {
+                    const prefix = frameData.startsWith('data:image') ? '' : 'data:image/jpeg;base64,';
+                    img.src = prefix + frameData;
                 }
             }
         }

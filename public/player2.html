@@ -38,6 +38,8 @@
                 </div>
 
                 <div class="task-info">
+                    <label>Your Nickname:</label>
+                    <input type="text" id="nicknameInput" class="form-control" placeholder="Enter your name" style="width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #ddd;">
                     <label>Current Task:</label>
                     <div id="currentTask" class="task-name">Waiting for game start...</div>
                 </div>
@@ -81,6 +83,7 @@
         </div>
     </div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="player.js"></script>
     <script>
         // Player 2 specific initialization

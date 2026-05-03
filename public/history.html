@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Pose Game - Match History</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .history-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            border-left: 6px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .match-info h3 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .match-info p {
+            color: #666;
+            font-size: 14px;
+        }
+        .players-scores {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+        }
+        .player-score {
+            text-align: center;
+        }
+        .score-val {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .winner-label {
+            color: #10b981;
+            font-weight: bold;
+            font-size: 12px;
+            text-transform: uppercase;
+            display: block;
+        }
+        .loading-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            font-size: 18px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="page history-page">
+        <div class="header-bar">
+            <a href="/" class="back-button">🏠 Home</a>
+            <h1>📜 Recent Match History</h1>
+        </div>
+
+        <div class="spectator-content">
+            <div id="loading" class="loading-container">
+                <p>Loading history data...</p>
+            </div>
+            
+            <div id="historyList" class="history-list">
+                <!-- Data will be inserted here -->
+            </div>
+        </div>
+
+        <div class="footer-info">
+            Showing the last 20 matches played.
+        </div>
+    </div>
+
+    <script>
+        async function fetchHistory() {
+            try {
+                const response = await fetch('/api/history');
+                const data = await response.json();
+                
+                const historyList = document.getElementById('historyList');
+                const loading = document.getElementById('loading');
+                
+                historyList.innerHTML = '';
+                
+                if (data.length === 0) {
+                    loading.innerHTML = '<p>No history available yet. Play a game!</p>';
+                    return;
+                }
+                
+                data.forEach(match => {
+                    const date = new Date(match.played_at).toLocaleString();
+                    const card = document.createElement('div');
+                    card.className = 'history-card';
+                    
+                    // Sort player results so winner (if any) is highlighted or players are consistent
+                    const results = match.player_results || [];
+                    
+                    let playersHtml = '';
+                    results.forEach(res => {
+                        playersHtml += `
+                            <div class="player-score">
+                                <span class="winner-label">${res.is_winner ? '🏆 Winner' : '&nbsp;'}</span>
+                                <div class="score-val">${res.score}</div>
+                                <strong>${res.players.nickname}</strong>
+                            </div>
+                        `;
+                    });
+
+                    card.innerHTML = `
+                        <div class="match-info">
+                            <h3>Mode: ${match.game_mode}</h3>
+                            <p>📅 ${date}</p>
+                        </div>
+                        <div class="players-scores">
+                            ${playersHtml}
+                        </div>
+                    `;
+                    historyList.appendChild(card);
+                });
+                
+                loading.style.display = 'none';
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('loading').innerHTML = '<p style="color: red;">Error loading data.</p>';
+            }
+        }
+
+        fetchHistory();
+    </script>
+</body>
+</html>

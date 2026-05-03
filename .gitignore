@@ -15,3 +15,6 @@ Thumbs.db
 # Project specific
 yolo26_ob_results/runs/*
 !yolo26_ob_results/runs/detect/yolo26_ob_experiment/weights/best.pt
+
+# Database
+.env

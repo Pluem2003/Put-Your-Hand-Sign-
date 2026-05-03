@@ -1,11 +1,9 @@
 import cv2
 from ultralytics import YOLO
 import base64
-import requests
-import json
+import socketio
 import time
 import threading
-import queue
 import os
 import argparse
 
@@ -13,94 +11,155 @@ import argparse
 script_dir = os.path.dirname(os.path.abspath(__file__))
 parser = argparse.ArgumentParser()
 parser.add_argument('--player', type=str, default='player1')
-parser.add_argument('--camera', type=int, default=1)
+parser.add_argument('--camera', type=int, default=0)
 parser.add_argument('--server', type=str, default='http://localhost:3000')
 args = parser.parse_args()
 
+SERVER_URL = args.server.strip().rstrip('/')
 MODEL_PATH = os.path.join(script_dir, "yolo26_ob_results", "runs", "detect", "yolo26_ob_experiment", "weights", "best.pt")
-SERVER_URL = args.server
 PLAYER_ID = args.player
 CAMERA_INDEX = args.camera
 THRESHOLD_VAL = 240
-SEND_INTERVAL = 0.033 # เป้าหมาย 30 FPS
+
+# --- SHARED STATE ---
+latest_prediction = "Unknown"
+latest_confidence = 0.0
+latest_inference_time = 0.0
+current_raw_frame = None
+current_frame_id = 0
+last_sent_frame_id = -1
+is_connected = False
 
 # --- INITIALIZE ---
+print(f"Loading Model: {MODEL_PATH}")
 model = YOLO(MODEL_PATH)
-# บังคับให้ YOLO ใช้ความละเอียดต่ำลงตอนทำ Prediction เพื่อเพิ่ม FPS
-# ถ้ามี GPU NVIDIA ให้เพิ่ม device=0 เข้าไปใน model.predict ด้านล่าง
+sio = socketio.Client(reconnection=True)
 
-cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+@sio.event
+def connect():
+    global is_connected
+    is_connected = True
+    print(f"\n[SUCCESS] Connected to server: {SERVER_URL}")
 
-# --- OPTIMIZED NETWORKING ---
-data_queue = queue.Queue(maxsize=3) # ลดเหลือ 3 เพื่อความสดใหม่ของภาพที่สุด
-session = requests.Session() # ใช้ Session ค้างไว้เพื่อความเร็ว
+@sio.event
+def disconnect():
+    global is_connected
+    is_connected = False
+    print("\n[WARNING] Disconnected from server.")
 
-def worker_thread():
+# --- THREAD 1: AI INFERENCE ---
+def ai_worker():
+    global latest_prediction, latest_confidence, latest_inference_time
     while True:
-        url, payload = data_queue.get()
-        try:
-            session.post(url, json=payload, timeout=0.3)
-        except:
-            pass
-        data_queue.task_done()
+        if current_raw_frame is not None:
+            # ใช้ภาพขนาดเล็กสำหรับ AI เพื่อความเร็ว
+            gray = cv2.cvtColor(current_raw_frame, cv2.COLOR_BGR2GRAY)
+            _, binary = cv2.threshold(gray, THRESHOLD_VAL, 255, cv2.THRESH_BINARY)
+            input_img = cv2.resize(binary, (320, 320))
+            input_img = cv2.cvtColor(input_img, cv2.COLOR_GRAY2BGR)
+            
+            start = time.time()
+            results = model.predict(source=input_img, conf=0.5, verbose=False, imgsz=320)
+            latest_inference_time = (time.time() - start) * 1000
+            
+            found = False
+            for r in results:
+                if len(r.boxes) > 0:
+                    latest_prediction = model.names[int(r.boxes[0].cls[0])]
+                    latest_confidence = float(r.boxes[0].conf[0])
+                    found = True
+                    break
+            if not found:
+                latest_prediction = "None"
+                latest_confidence = 0.0
+        time.sleep(0.01)
 
-threading.Thread(target=worker_thread, daemon=True).start()
+# --- THREAD 2: NETWORK STREAMER ---
+def stream_worker():
+    global last_sent_frame_id
+    while True:
+        # ส่งเฉพาะเมื่อมีเฟรมใหม่ และ เชื่อมต่ออยู่
+        if is_connected and current_raw_frame is not None and current_frame_id > last_sent_frame_id:
+            last_sent_frame_id = current_frame_id
+            
+            # ย่อภาพและส่งเป็น Binary
+            gray = cv2.cvtColor(current_raw_frame, cv2.COLOR_BGR2GRAY)
+            _, binary = cv2.threshold(gray, THRESHOLD_VAL, 255, cv2.THRESH_BINARY)
+            small = cv2.resize(binary, (160, 120))
+            _, buffer = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 25])
+            
+            payload = {
+                'playerId': PLAYER_ID,
+                'prediction': latest_prediction,
+                'confidence': latest_confidence,
+                'cameraFrame': buffer.tobytes(),
+                'inferenceTime': latest_inference_time,
+                'timestamp': time.time() # ใส่ timestamp เพื่อเช็คความสดใหม่
+            }
+            try:
+                sio.emit('player_pose', payload)
+            except: pass
+            
+        time.sleep(0.03) # Cap ไว้ที่ประมาณ 33 FPS
 
-def encode_optimized(binary_frame):
-    # ย่อภาพลงอีกนิดเพื่อให้ส่งผ่าน Tunnel ได้ทัน 30 FPS
-    small = cv2.resize(binary_frame, (160, 120))
-    _, buffer = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 20])
-    return base64.b64encode(buffer).decode('utf-8')
-
-def send_data(prediction, confidence, frame_b64, ms):
-    endpoint = f"{SERVER_URL}/api/{PLAYER_ID}/pose"
-    payload = {
-        'prediction': prediction, 'confidence': confidence,
-        'cameraFrame': frame_b64, 'inferenceTime': ms
-    }
-    if not data_queue.full():
-        data_queue.put((endpoint, payload))
-
-# --- MAIN LOOP ---
-last_send_time = 0
-
-while True:
-    ret, frame = cap.read()
-    if not ret: break
-
-    # 1. Pre-processing (ทำให้ภาพเล็กลงก่อนเข้า AI จะช่วยเพิ่ม FPS)
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, THRESHOLD_VAL, 255, cv2.THRESH_BINARY)
+# --- MAIN THREAD: CAMERA & GUI ---
+def main():
+    global current_raw_frame, current_frame_id
     
-    # ย่อภาพที่จะเข้า AI ให้เหลือ 320px (YOLO จะรันเร็วขึ้นมาก!)
-    input_for_ai = cv2.resize(binary, (320, 320))
-    input_for_ai = cv2.cvtColor(input_for_ai, cv2.COLOR_GRAY2BGR)
+    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    
+    if not cap.isOpened():
+        print(f"Error: Could not open camera {CAMERA_INDEX}")
+        return
 
-    # 2. Inference (ใส่ imgsz=320 เพื่อให้ AI รันเร็วขึ้น)
-    start_time = time.time()
-    results = model.predict(source=input_for_ai, conf=0.5, verbose=False, imgsz=320)
-    inference_ms = (time.time() - start_time) * 1000
+    # Start Workers
+    threading.Thread(target=ai_worker, daemon=True).start()
+    threading.Thread(target=stream_worker, daemon=True).start()
+    
+    def connect_with_retry():
+        while not is_connected:
+            try:
+                print(f"Attempting to connect to {SERVER_URL}...")
+                sio.connect(SERVER_URL, wait_timeout=10, headers={'ngrok-skip-browser-warning': 'true'})
+                break
+            except Exception as e:
+                print(f"Connection failed: {e}. Retrying in 2 seconds...")
+                time.sleep(2)
 
-    # 3. Get results
-    prediction, confidence = "Unknown", 0.0
-    for r in results:
-        if len(r.boxes) > 0:
-            prediction = model.names[int(r.boxes[0].cls[0])]
-            confidence = float(r.boxes[0].conf[0])
+    threading.Thread(target=connect_with_retry, daemon=True).start()
+
+    print("\n--- Running AI with Local Preview ---")
+    print("Press 'q' in the window to stop")
+
+    while True:
+        ret, frame = cap.read()
+        if not ret: break
+        
+        current_raw_frame = frame.copy()
+        current_frame_id += 1 # เพิ่ม ID เมื่อได้ภาพใหม่
+        
+        # สร้างภาพสำหรับโชว์บนจอคอม
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, THRESHOLD_VAL, 255, cv2.THRESH_BINARY)
+        preview = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+        
+        # วาดข้อมูลลงบนจอ
+        color = (0, 255, 0) if latest_prediction != "None" else (0, 0, 255)
+        cv2.putText(preview, f"P1 AI: {latest_prediction} ({latest_confidence:.2f})", (20, 40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+        cv2.putText(preview, f"Inference: {latest_inference_time:.1f}ms", (20, 70), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
+        
+        cv2.imshow(f"Put Your Hand Sign - {PLAYER_ID}", preview)
+        
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    # 4. Network Send (30 FPS)
-    curr_time = time.time()
-    if curr_time - last_send_time >= SEND_INTERVAL:
-        b64 = encode_optimized(binary)
-        send_data(prediction, confidence, b64, inference_ms)
-        last_send_time = curr_time
+    cap.release()
+    cv2.destroyAllWindows()
+    sio.disconnect()
 
-    # ปิดหน้าต่างโชว์ทั้งหมด (ถ้าคอมเมนต์ 2 บรรทัดนี้จะไม่มีหน้าต่างเด้งในเครื่อง)
-    # cv2.imshow('Debug', binary)
-    # if cv2.waitKey(1) & 0xFF == ord('q'): break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()

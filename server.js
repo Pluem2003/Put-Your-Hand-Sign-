@@ -1,9 +1,26 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
+const { createClient } = require('@supabase/supabase-js');
+
+// Initialize Supabase Client
+const supabaseUrl = process.env.SUPABASE_URL || 'https://YOUR_PROJECT.supabase.co';
+const supabaseKey = process.env.SUPABASE_ANON_KEY || 'YOUR_ANON_KEY';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  maxHttpBufferSize: 1e8 // Allow larger payloads for camera frames
+});
 
 // Middleware
 app.use(cors());
@@ -14,6 +31,7 @@ app.use(express.static('public'));
 let gameState = {
   player1: {
     id: 'player1',
+    nickname: 'Player 1',
     ready: false,
     score: 0,
     prediction: null,
@@ -23,6 +41,7 @@ let gameState = {
   },
   player2: {
     id: 'player2',
+    nickname: 'Player 2',
     ready: false,
     score: 0,
     prediction: null,
@@ -50,6 +69,20 @@ let msgCounts = {
   player1: 0,
   player2: 0
 };
+
+// Helper to broadcast state
+function broadcastState() {
+  // Create a copy without heavy camera frames for general state updates
+  const stateCopy = JSON.parse(JSON.stringify(gameState));
+  stateCopy.player1.cameraFrame = null;
+  stateCopy.player2.cameraFrame = null;
+  io.emit('gameState', stateCopy);
+}
+
+function broadcastPlayerPose(playerNum, data) {
+  // Use volatile to drop packets if the network is congested
+  io.volatile.emit('playerPoseUpdate', { playerNum, ...data });
+}
 
 // Task definitions
 const tasks = [
@@ -87,13 +120,16 @@ function initializeGame() {
   gameState.player1.score = 0;
   gameState.player1.prediction = null;
   gameState.player1.inferenceTime = 0;
+  gameState.player1.cameraFrame = null;
   
   gameState.player2.ready = false;
   gameState.player2.score = 0;
   gameState.player2.prediction = null;
   gameState.player2.inferenceTime = 0;
+  gameState.player2.cameraFrame = null;
 
   console.log(`Game reset. Mode: ${gameState.gameMode}`);
+  broadcastState();
 }
 
 function getRandomTask() {
@@ -119,6 +155,8 @@ function startCountdown() {
   gameState.roundComplete = false;
   gameState.winner = null;
   
+  broadcastState();
+
   if (countdownInterval) clearInterval(countdownInterval);
   
   countdownInterval = setInterval(() => {
@@ -127,10 +165,13 @@ function startCountdown() {
       clearInterval(countdownInterval);
       countdownInterval = null;
       gameState.countdown = 0;
+      broadcastState();
       return;
     }
     
     gameState.countdown--;
+    broadcastState();
+
     if (gameState.countdown <= 0) {
       clearInterval(countdownInterval);
       countdownInterval = null;
@@ -147,30 +188,79 @@ function startGame() {
   gameState.timerRunning = true;
   gameState.roundComplete = false;
   startNewTask();
+  broadcastState();
 }
 
 function startNewTask() {
   if (!gameState.gameActive) return;
   gameState.currentTask = getRandomTask();
   gameState.roundWinner = null;
+  broadcastState();
 }
 
-// Routes
+// Socket.io Handlers
+io.on('connection', (socket) => {
+  console.log(`New client connected: ${socket.id}`);
+  
+  // Send current state to new client
+  socket.emit('gameState', gameState);
+
+  socket.on('player_ready', (data) => {
+    const { playerId, ready, nickname } = data;
+    if (gameState[playerId]) {
+      gameState[playerId].ready = ready;
+      if (nickname) gameState[playerId].nickname = nickname;
+      if (gameState.player1.ready && gameState.player2.ready && !gameState.gameActive && gameState.countdown === 0) {
+        startCountdown();
+      }
+      broadcastState();
+    }
+  });
+
+  socket.on('player_pose', (data) => {
+    const { playerId, prediction, confidence, cameraFrame, inferenceTime } = data;
+    if (gameState[playerId]) {
+      const playerNum = playerId.replace('player', '');
+      msgCounts[playerId]++;
+      
+      gameState[playerId].prediction = prediction;
+      gameState[playerId].poseConfidence = confidence;
+      gameState[playerId].inferenceTime = inferenceTime || 0;
+      if (cameraFrame) gameState[playerId].cameraFrame = cameraFrame;
+
+      if (gameState.gameActive && !gameState.roundWinner && predictionMatches(prediction, gameState.currentTask.name, confidence)) {
+        gameState[playerId].score++;
+        gameState.roundWinner = playerId;
+        broadcastState();
+        setTimeout(() => { startNewTask(); }, 500);
+      } else {
+        // Optimized: only broadcast pose update to avoid full state broadcast every frame
+        broadcastPlayerPose(playerNum, { 
+          prediction, confidence, cameraFrame, inferenceTime, score: gameState[playerId].score 
+        });
+      }
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`Client disconnected: ${socket.id}`);
+  });
+});
+
+// Keep existing API Routes for compatibility or specialized needs
 app.post('/api/player1/ready', (req, res) => {
   const { ready } = req.body;
   gameState.player1.ready = ready;
   if (gameState.player1.ready && gameState.player2.ready && !gameState.gameActive && gameState.countdown === 0) {
     startCountdown();
   }
+  broadcastState();
   res.json({ success: true, gameActive: gameState.gameActive, countdown: gameState.countdown });
 });
 
 app.post('/api/player1/pose', (req, res) => {
   msgCounts.player1++;
   const { prediction, confidence, cameraFrame, inferenceTime } = req.body;
-  if (msgCounts.player1 % 10 === 0) {
-    console.log(`[Player 1] Pose received. Prediction: ${prediction}, Frame: ${cameraFrame ? 'YES (' + cameraFrame.length + ' chars)' : 'NO'}`);
-  }
   gameState.player1.prediction = prediction;
   gameState.player1.poseConfidence = confidence;
   gameState.player1.inferenceTime = inferenceTime || 0;
@@ -178,7 +268,10 @@ app.post('/api/player1/pose', (req, res) => {
   if (gameState.gameActive && !gameState.roundWinner && predictionMatches(prediction, gameState.currentTask.name, confidence)) {
     gameState.player1.score++;
     gameState.roundWinner = 'player1';
+    broadcastState();
     setTimeout(() => { startNewTask(); }, 500);
+  } else {
+    broadcastPlayerPose(1, { prediction, confidence, cameraFrame, inferenceTime, score: gameState.player1.score });
   }
   res.json({ success: true });
 });
@@ -189,6 +282,7 @@ app.post('/api/player2/ready', (req, res) => {
   if (gameState.player1.ready && gameState.player2.ready && !gameState.gameActive && gameState.countdown === 0) {
     startCountdown();
   }
+  broadcastState();
   res.json({ success: true, gameActive: gameState.gameActive, countdown: gameState.countdown });
 });
 
@@ -202,7 +296,10 @@ app.post('/api/player2/pose', (req, res) => {
   if (gameState.gameActive && !gameState.roundWinner && predictionMatches(prediction, gameState.currentTask.name, confidence)) {
     gameState.player2.score++;
     gameState.roundWinner = 'player2';
+    broadcastState();
     setTimeout(() => { startNewTask(); }, 500);
+  } else {
+    broadcastPlayerPose(2, { prediction, confidence, cameraFrame, inferenceTime, score: gameState.player2.score });
   }
   res.json({ success: true });
 });
@@ -223,16 +320,19 @@ app.post('/api/debug/timer/set', (req, res) => {
   const { seconds } = req.body;
   defaultTimerValue = parseInt(seconds);
   gameState.timer = defaultTimerValue;
+  broadcastState();
   res.json({ success: true });
 });
 
 app.post('/api/debug/timer/start', (req, res) => {
   gameState.timerRunning = true;
+  broadcastState();
   res.json({ success: true });
 });
 
 app.post('/api/debug/timer/stop', (req, res) => {
   gameState.timerRunning = false;
+  broadcastState();
   res.json({ success: true });
 });
 
@@ -243,7 +343,6 @@ app.post('/api/debug/game/start', (req, res) => {
   } else { res.status(400).json({ success: false, error: 'Both players must be ready' }); }
 });
 
-// FORCE START (Immediate, no countdown)
 app.post('/api/debug/game/force-start', (req, res) => {
   if (gameResetTimeout) { clearTimeout(gameResetTimeout); gameResetTimeout = null; }
   gameState.countdown = 0;
@@ -251,10 +350,10 @@ app.post('/api/debug/game/force-start', (req, res) => {
   res.json({ success: true });
 });
 
-// FORCE STOP (Immediate stop timer and active state)
 app.post('/api/debug/game/force-stop', (req, res) => {
   gameState.gameActive = false;
   gameState.timerRunning = false;
+  broadcastState();
   res.json({ success: true });
 });
 
@@ -265,47 +364,78 @@ app.post('/api/debug/player/ready/:playerNum', (req, res) => {
   const { ready } = req.body;
   if (playerNum === '1') gameState.player1.ready = ready;
   else if (playerNum === '2') gameState.player2.ready = ready;
+  broadcastState();
   res.json({ success: true });
 });
 
 app.get('/api/spectator/state', (req, res) => {
-  const includeFrames = req.query.frames === 'true';
-  const data = {
-    player1: { 
-      score: gameState.player1.score, 
-      prediction: gameState.player1.prediction, 
-      poseConfidence: gameState.player1.poseConfidence, 
-      ready: gameState.player1.ready, 
-      inferenceTime: gameState.player1.inferenceTime 
-    },
-    player2: { 
-      score: gameState.player2.score, 
-      prediction: gameState.player2.prediction, 
-      poseConfidence: gameState.player2.poseConfidence, 
-      ready: gameState.player2.ready, 
-      inferenceTime: gameState.player2.inferenceTime 
-    },
-    gameActive: gameState.gameActive, 
-    gameMode: gameState.gameMode, 
-    countdown: gameState.countdown, 
-    currentTask: gameState.currentTask,
-    timer: gameState.timer, 
-    timerRunning: gameState.timerRunning, 
-    roundWinner: gameState.roundWinner, 
-    roundComplete: gameState.roundComplete, 
-    winner: gameState.winner
-  };
-
-  if (includeFrames) {
-    data.player1.cameraFrame = gameState.player1.cameraFrame;
-    data.player2.cameraFrame = gameState.player2.cameraFrame;
-  }
-
-  res.json(data);
+  res.json(gameState);
 });
 
-app.get('/api/spectator/camera-frames', (req, res) => {
-  res.json({ player1Frame: gameState.player1.cameraFrame, player2Frame: gameState.player2.cameraFrame });
+// NEW: Leaderboard API
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('player_results')
+      .select(`
+        score,
+        is_winner,
+        players (
+          nickname
+        )
+      `);
+
+    if (error) throw error;
+
+    // Aggregate data by player nickname
+    const leaderboard = {};
+    data.forEach(row => {
+      const name = row.players.nickname;
+      if (!leaderboard[name]) {
+        leaderboard[name] = { name, totalScore: 0, wins: 0, matches: 0 };
+      }
+      leaderboard[name].totalScore += row.score;
+      if (row.is_winner) leaderboard[name].wins += 1;
+      leaderboard[name].matches += 1;
+    });
+
+    const sortedLeaderboard = Object.values(leaderboard)
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .slice(0, 10);
+
+    res.json(sortedLeaderboard);
+  } catch (err) {
+    console.error('Error fetching leaderboard:', err);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// NEW: History API
+app.get('/api/history', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('matches')
+      .select(`
+        match_id,
+        game_mode,
+        played_at,
+        player_results (
+          score,
+          is_winner,
+          players (
+            nickname
+          )
+        )
+      `)
+      .order('played_at', { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Error fetching history:', err);
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
 });
 
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
@@ -313,6 +443,8 @@ app.get('/player1', (req, res) => { res.sendFile(path.join(__dirname, 'public', 
 app.get('/player2', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'player2.html')); });
 app.get('/spectator', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'spectator.html')); });
 app.get('/debug', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'debug.html')); });
+app.get('/leaderboard', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'leaderboard.html')); });
+app.get('/history', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'history.html')); });
 
 function predictionMatches(prediction, taskName, confidence) {
   if (!prediction || !taskName) return false;
@@ -320,6 +452,87 @@ function predictionMatches(prediction, taskName, confidence) {
   const t = taskName.toLowerCase().trim();
   if (confidence < 0.7) return false;
   return p.includes(t) || t.includes(p);
+}
+
+async function saveGameToSupabase() {
+  console.log('[Supabase] saveGameToSupabase called');
+  
+  // Only save if Supabase is properly configured
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || 
+      process.env.SUPABASE_URL.includes('YOUR_PROJECT') || 
+      process.env.SUPABASE_ANON_KEY.includes('YOUR_ANON_KEY')) {
+    console.warn('[Supabase] Skipping DB save: Credentials not configured or still using placeholders in .env');
+    return;
+  }
+
+  try {
+    const p1Nickname = gameState.player1.nickname;
+    const p2Nickname = gameState.player2.nickname;
+    console.log(`[Supabase] Saving results for: ${p1Nickname} vs ${p2Nickname}`);
+    
+    // 1. Ensure Players Exist
+    console.log('[Supabase] Upserting player 1...');
+    const { data: p1Data, error: p1Err } = await supabase
+      .from('players')
+      .upsert({ nickname: p1Nickname }, { onConflict: 'nickname' })
+      .select()
+      .single();
+      
+    console.log('[Supabase] Upserting player 2...');
+    const { data: p2Data, error: p2Err } = await supabase
+      .from('players')
+      .upsert({ nickname: p2Nickname }, { onConflict: 'nickname' })
+      .select()
+      .single();
+
+    if (p1Err || p2Err) {
+      console.error('[Supabase] Error upserting players:', p1Err || p2Err);
+      return;
+    }
+
+    // 2. Create Match Record
+    console.log('[Supabase] Creating match record...');
+    const { data: matchData, error: matchErr } = await supabase
+      .from('matches')
+      .insert([{ game_mode: gameState.gameMode }])
+      .select()
+      .single();
+
+    if (matchErr || !matchData) {
+      console.error('[Supabase] Error creating match:', matchErr);
+      return;
+    }
+
+    // 3. Create Player Results
+    console.log('[Supabase] Saving player results...');
+    const resultsToInsert = [
+      {
+        match_id: matchData.match_id,
+        player_id: p1Data.player_id,
+        score: gameState.player1.score,
+        is_winner: gameState.winner === 'player1'
+      },
+      {
+        match_id: matchData.match_id,
+        player_id: p2Data.player_id,
+        score: gameState.player2.score,
+        is_winner: gameState.winner === 'player2'
+      }
+    ];
+
+    const { error: resultsErr } = await supabase
+      .from('player_results')
+      .insert(resultsToInsert);
+
+    if (resultsErr) {
+      console.error('[Supabase] Error saving player results:', resultsErr);
+    } else {
+      console.log('[Supabase] Game results saved successfully!');
+    }
+
+  } catch (err) {
+    console.error('[Supabase] Unexpected error saving game:', err);
+  }
 }
 
 setInterval(() => {
@@ -337,7 +550,15 @@ setInterval(() => {
       if (gameState.player1.score > gameState.player2.score) gameState.winner = 'player1';
       else if (gameState.player2.score > gameState.player1.score) gameState.winner = 'player2';
       else gameState.winner = 'tie';
+      
+      broadcastState();
+      
+      // Save to Supabase async
+      saveGameToSupabase();
+      
       gameResetTimeout = setTimeout(() => { initializeGame(); gameResetTimeout = null; }, 5000);
+    } else {
+      broadcastState(); // Broadcast timer updates
     }
   }
 }, 1000);
@@ -346,14 +567,9 @@ app.get('/api/player/:playerNum/data', (req, res) => {
   const { playerNum } = req.params;
   const player = gameState[`player${playerNum}`];
   if (!player) return res.status(404).json({ error: 'Player not found' });
-  res.json({
-    score: player.score, prediction: player.prediction, poseConfidence: player.poseConfidence, ready: player.ready, 
-    cameraFrame: player.cameraFrame, inferenceTime: player.inferenceTime,
-    gameActive: gameState.gameActive, gameMode: gameState.gameMode, countdown: gameState.countdown, currentTask: gameState.currentTask,
-    timer: gameState.timer, timerRunning: gameState.timerRunning, roundWinner: gameState.roundWinner, 
-    roundComplete: gameState.roundComplete, winner: gameState.winner
-  });
+  res.json({ ...player, ...gameState, player1: undefined, player2: undefined, [`player${playerNum}`]: player });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => { console.log(`Hand Pose Game server running on http://localhost:${PORT}`); });
+server.listen(PORT, () => { console.log(`Hand Pose Game server running on http://localhost:${PORT}`); });
+

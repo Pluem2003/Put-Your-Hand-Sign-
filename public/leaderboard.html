@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Pose Game - Leaderboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .leaderboard-table th, .leaderboard-table td {
+            padding: 15px 20px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .leaderboard-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+        }
+        .leaderboard-table tr:last-child td {
+            border-bottom: none;
+        }
+        .leaderboard-table tr:hover {
+            background: #f0f4ff;
+        }
+        .rank-badge {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            text-align: center;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .rank-1 { background: #ffd700; color: #000; }
+        .rank-2 { background: #c0c0c0; color: #000; }
+        .rank-3 { background: #cd7f32; color: #fff; }
+        .rank-other { background: #e9ecef; color: #666; }
+        
+        .loading-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            font-size: 18px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="page leaderboard-page">
+        <div class="header-bar">
+            <a href="/" class="back-button">🏠 Home</a>
+            <h1>🏆 Global Leaderboard</h1>
+        </div>
+
+        <div class="spectator-content">
+            <div id="loading" class="loading-container">
+                <p>Loading leaderboard data...</p>
+            </div>
+            
+            <table id="leaderboardTable" class="leaderboard-table" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Player</th>
+                        <th>Total Score</th>
+                        <th>Wins</th>
+                        <th>Matches</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <!-- Data will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="footer-info">
+            Top 10 players by total accumulated score.
+        </div>
+    </div>
+
+    <script>
+        async function fetchLeaderboard() {
+            try {
+                const response = await fetch('/api/leaderboard');
+                const data = await response.json();
+                
+                const tableBody = document.getElementById('leaderboardBody');
+                const loading = document.getElementById('loading');
+                const table = document.getElementById('leaderboardTable');
+                
+                tableBody.innerHTML = '';
+                
+                if (data.length === 0) {
+                    loading.innerHTML = '<p>No data available yet. Play a game to see results!</p>';
+                    return;
+                }
+                
+                data.forEach((player, index) => {
+                    const rank = index + 1;
+                    const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-other';
+                    
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><span class="rank-badge ${rankClass}">${rank}</span></td>
+                        <td><strong>${player.name}</strong></td>
+                        <td class="prediction-text">${player.totalScore}</td>
+                        <td>${player.wins}</td>
+                        <td>${player.matches}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+                
+                loading.style.display = 'none';
+                table.style.display = 'table';
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('loading').innerHTML = '<p style="color: red;">Error loading data.</p>';
+            }
+        }
+
+        fetchLeaderboard();
+    </script>
+</body>
+</html>

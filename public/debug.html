@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Debug Console - Hand Pose Game</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
     <div class="page debug-page">
@@ -157,9 +158,25 @@
             constructor() {
                 this.logMessages = [];
                 this.updateCount = 0;
+                this.setupSocket();
                 this.setupEventListeners();
-                this.startMonitoring();
                 this.startRateCalculator();
+            }
+
+            setupSocket() {
+                this.socket = io();
+                
+                this.socket.on('connect', () => {
+                    this.addLog('Connected to server');
+                });
+
+                this.socket.on('gameState', (state) => {
+                    this.handleGameState(state);
+                });
+
+                this.socket.on('disconnect', () => {
+                    this.addLog('Disconnected from server');
+                });
             }
 
             setupEventListeners() {
@@ -205,13 +222,15 @@
             }
 
             async setReady(num, state) {
-                await this.callApi(`/api/debug/player/ready/${num}`, 'POST', `P${num} Ready: ${state}`, { ready: state });
+                this.socket.emit('player_ready', { playerId: `player${num}`, ready: state });
+                this.addLog(`P${num} Ready set to: ${state}`);
             }
 
             async simulate(num) {
                 const pose = document.getElementById('poseSelect').value;
                 if (!pose) return this.addLog('✗ Select a pose');
-                await this.callApi(`/api/player${num}/pose`, 'POST', `Sim P${num}: ${pose}`, { prediction: pose, confidence: 0.95 });
+                this.socket.emit('player_pose', { playerId: `player${num}`, prediction: pose, confidence: 0.95 });
+                this.addLog(`Sim P${num}: ${pose}`);
             }
 
             startRateCalculator() {
@@ -221,25 +240,21 @@
                 }, 1000);
             }
 
-            async updateGameState() {
-                try {
-                    this.updateCount++;
-                    const response = await fetch('/api/debug/state');
-                    const state = await response.json();
-                    
-                    document.getElementById('currentModeDisplay').textContent = state.gameMode.toUpperCase();
-                    document.getElementById('gameStatusDisplay').textContent = `${state.gameActive ? 'ACTIVE' : 'INACTIVE'} / ${state.timerRunning ? 'RUNNING' : 'STOPPED'}`;
-                    document.getElementById('countdownValue').textContent = state.countdown > 0 ? state.countdown : 'None';
-                    document.getElementById('currentTask').textContent = state.currentTask ? state.currentTask.name : 'None';
-                    document.getElementById('roundStatsDisplay').textContent = `Round Win: ${state.roundWinner || 'None'} | Timer: ${state.timer}s`;
-                    document.getElementById('winner').textContent = state.winner || 'None';
-                    
-                    document.getElementById('p1Stats').textContent = `${state.msgRates.player1} msg/s | ${state.player1.inferenceTime.toFixed(1)} ms`;
-                    document.getElementById('p2Stats').textContent = `${state.msgRates.player2} msg/s | ${state.player2.inferenceTime.toFixed(1)} ms`;
+            handleGameState(state) {
+                this.updateCount++;
+                
+                document.getElementById('currentModeDisplay').textContent = state.gameMode.toUpperCase();
+                document.getElementById('gameStatusDisplay').textContent = `${state.gameActive ? 'ACTIVE' : 'INACTIVE'} / ${state.timerRunning ? 'RUNNING' : 'STOPPED'}`;
+                document.getElementById('countdownValue').textContent = state.countdown > 0 ? state.countdown : 'None';
+                document.getElementById('currentTask').textContent = state.currentTask ? state.currentTask.name : 'None';
+                document.getElementById('roundStatsDisplay').textContent = `Round Win: ${state.roundWinner || 'None'} | Timer: ${state.timer}s`;
+                document.getElementById('winner').textContent = state.winner || 'None';
+                
+                document.getElementById('p1Stats').textContent = `${state.msgRates.player1} msg/s | ${state.player1.inferenceTime.toFixed(1)} ms`;
+                document.getElementById('p2Stats').textContent = `${state.msgRates.player2} msg/s | ${state.player2.inferenceTime.toFixed(1)} ms`;
 
-                    this.updateBadge('player1ReadyStatus', state.player1.ready);
-                    this.updateBadge('player2ReadyStatus', state.player2.ready);
-                } catch (e) {}
+                this.updateBadge('player1ReadyStatus', state.player1.ready);
+                this.updateBadge('player2ReadyStatus', state.player2.ready);
             }
 
             updateBadge(id, ready) {
@@ -249,8 +264,6 @@
                 el.style.background = ready ? '#10b981' : '#ef4444';
                 el.style.color = 'white';
             }
-
-            startMonitoring() { setInterval(() => this.updateGameState(), 500); }
 
             addLog(message) {
                 const timestamp = new Date().toLocaleTimeString();
@@ -263,3 +276,4 @@
     </script>
 </body>
 </html>
+
