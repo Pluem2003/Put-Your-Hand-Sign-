@@ -4,122 +4,103 @@ import base64
 import requests
 import json
 import time
-import sys
-import argparse
+import threading
+import queue
 import os
+import argparse
 
-# Get the directory where the script is located
+# --- CONFIG & ARGS ---
 script_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description='YOLO Hand Pose Detection with Server Integration')
-parser.add_argument('--player', type=str, default='player1', choices=['player1', 'player2'],
-                    help='Player ID (player1 or player2)')
-parser.add_argument('--camera', type=int, default=1, help='Camera index (default: 1)')
-parser.add_argument('--server', type=str, default='http://localhost:3000', help='Server URL')
-parser.add_argument('--show-time', action='store_true', help='Display inference time on frame')
-parser.add_argument('--no-settings', action='store_true', help='Skip camera settings UI')
+parser = argparse.ArgumentParser()
+parser.add_argument('--player', type=str, default='player1')
+parser.add_argument('--camera', type=int, default=1)
+parser.add_argument('--server', type=str, default='http://localhost:3000')
 args = parser.parse_args()
 
-# Configuration
 MODEL_PATH = os.path.join(script_dir, "yolo26_ob_results", "runs", "detect", "yolo26_ob_experiment", "weights", "best.pt")
 SERVER_URL = args.server
 PLAYER_ID = args.player
 CAMERA_INDEX = args.camera
 THRESHOLD_VAL = 240
-CONF_THRESHOLD = 0.5
+SEND_INTERVAL = 0.033 # เป้าหมาย 30 FPS
 
-import threading
-import requests
-
-# Load YOLO model
-print(f"Loading YOLO model from: {MODEL_PATH}")
+# --- INITIALIZE ---
 model = YOLO(MODEL_PATH)
+# บังคับให้ YOLO ใช้ความละเอียดต่ำลงตอนทำ Prediction เพื่อเพิ่ม FPS
+# ถ้ามี GPU NVIDIA ให้เพิ่ม device=0 เข้าไปใน model.predict ด้านล่าง
 
-# Rate limiting variables
-last_send_time = 0
-SEND_INTERVAL = 0.033 # ~30 times per second
-
-# Initialize camera with DSHOW for Windows settings support
 cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
-
-# Show camera settings UI (the "pop up" with sliders) unless --no-settings is used
-if not args.no_settings:
-    print("Opening camera settings UI...")
-    cap.set(cv2.CAP_PROP_SETTINGS, 1)
-
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-def encode_frame_to_base64(frame):
-    """Encode frame to base64 string with heavy optimization for speed"""
-    small_frame = cv2.resize(frame, (240, 180))
-    _, buffer = cv2.imencode('.jpg', small_frame, [cv2.IMWRITE_JPEG_QUALITY, 25])
+# --- OPTIMIZED NETWORKING ---
+data_queue = queue.Queue(maxsize=3) # ลดเหลือ 3 เพื่อความสดใหม่ของภาพที่สุด
+session = requests.Session() # ใช้ Session ค้างไว้เพื่อความเร็ว
+
+def worker_thread():
+    while True:
+        url, payload = data_queue.get()
+        try:
+            session.post(url, json=payload, timeout=0.3)
+        except:
+            pass
+        data_queue.task_done()
+
+threading.Thread(target=worker_thread, daemon=True).start()
+
+def encode_optimized(binary_frame):
+    # ย่อภาพลงอีกนิดเพื่อให้ส่งผ่าน Tunnel ได้ทัน 30 FPS
+    small = cv2.resize(binary_frame, (160, 120))
+    _, buffer = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 20])
     return base64.b64encode(buffer).decode('utf-8')
 
-def send_data_async(url, data):
-    """Worker function to send data in background thread"""
-    try:
-        requests.post(url, json=data, timeout=1.0)
-    except:
-        pass
-
-def send_pose_to_server(prediction, confidence, frame_base64, inference_time):
-    """Send data using a background thread to avoid blocking the main loop"""
+def send_data(prediction, confidence, frame_b64, ms):
     endpoint = f"{SERVER_URL}/api/{PLAYER_ID}/pose"
     payload = {
-        'prediction': prediction,
-        'confidence': confidence,
-        'cameraFrame': frame_base64,
-        'inferenceTime': inference_time
+        'prediction': prediction, 'confidence': confidence,
+        'cameraFrame': frame_b64, 'inferenceTime': ms
     }
-    # Fire and forget in a background thread
-    threading.Thread(target=send_data_async, args=(endpoint, payload), daemon=True).start()
-    return True
+    if not data_queue.full():
+        data_queue.put((endpoint, payload))
+
+# --- MAIN LOOP ---
+last_send_time = 0
 
 while True:
     ret, frame = cap.read()
     if not ret: break
 
-    # Pre-processing
+    # 1. Pre-processing (ทำให้ภาพเล็กลงก่อนเข้า AI จะช่วยเพิ่ม FPS)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, THRESHOLD_VAL, 255, cv2.THRESH_BINARY)
-    input_frame = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+    
+    # ย่อภาพที่จะเข้า AI ให้เหลือ 320px (YOLO จะรันเร็วขึ้นมาก!)
+    input_for_ai = cv2.resize(binary, (320, 320))
+    input_for_ai = cv2.cvtColor(input_for_ai, cv2.COLOR_GRAY2BGR)
 
-    # Run inference and measure time
+    # 2. Inference (ใส่ imgsz=320 เพื่อให้ AI รันเร็วขึ้น)
     start_time = time.time()
-    results = model.predict(source=input_frame, conf=CONF_THRESHOLD, verbose=False)
-    end_time = time.time()
-    inference_ms = (end_time - start_time) * 1000
+    results = model.predict(source=input_for_ai, conf=0.5, verbose=False, imgsz=320)
+    inference_ms = (time.time() - start_time) * 1000
 
-    prediction = "Unknown"
-    confidence = 0.0
+    # 3. Get results
+    prediction, confidence = "Unknown", 0.0
     for r in results:
         if len(r.boxes) > 0:
-            top_box = r.boxes[0]
-            class_id = int(top_box.cls[0])
-            confidence = float(top_box.conf[0])
-            prediction = model.names[class_id]
+            prediction = model.names[int(r.boxes[0].cls[0])]
+            confidence = float(r.boxes[0].conf[0])
             break
 
-    # Encode and send (Rate Limited)
-    current_time = time.time()
-    if current_time - last_send_time >= SEND_INTERVAL:
-        frame_b64 = encode_frame_to_base64(input_frame)
-        send_pose_to_server(prediction, confidence, frame_b64, inference_ms)
-        last_send_time = current_time
+    # 4. Network Send (30 FPS)
+    curr_time = time.time()
+    if curr_time - last_send_time >= SEND_INTERVAL:
+        b64 = encode_optimized(binary)
+        send_data(prediction, confidence, b64, inference_ms)
+        last_send_time = curr_time
 
-    # Display
-    info_text = f"{prediction} ({confidence:.2f})"
-    if args.show_time:
-        info_text += f" | {inference_ms:.1f}ms"
-    
-    cv2.putText(input_frame, info_text, (20, 40), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-    cv2.imshow(f'Shadow AI - {PLAYER_ID}', input_frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    # ปิดหน้าต่างโชว์ทั้งหมด (ถ้าคอมเมนต์ 2 บรรทัดนี้จะไม่มีหน้าต่างเด้งในเครื่อง)
+    # cv2.imshow('Debug', binary)
+    # if cv2.waitKey(1) & 0xFF == ord('q'): break
 
 cap.release()
 cv2.destroyAllWindows()
