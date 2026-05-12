@@ -6,6 +6,12 @@ const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const { createClient } = require('@supabase/supabase-js');
+const localDb = require('./local_db_handler');
+
+// Initialize local database
+localDb.initDb()
+  .then(() => console.log('[SQLite] Local database initialized'))
+  .catch(err => console.error('[SQLite] Failed to initialize local database:', err));
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.SUPABASE_URL || 'https://YOUR_PROJECT.supabase.co';
@@ -242,6 +248,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('set_camera', (data) => {
+    console.log(`Camera change requested for ${data.playerId} to index ${data.cameraIndex}`);
+    io.emit('set_camera', data);
+  });
+
+  socket.on('update_camera_controls', (data) => {
+    // Relay to inference scripts
+    io.emit('update_camera_controls', data);
+  });
+
+  socket.on('open_camera_settings', (data) => {
+    io.emit('open_camera_settings', data);
+  });
+
+  socket.on('camera_response', (data) => {
+    console.log(`Camera change response for ${data.playerId}: ${data.success ? 'Success' : 'Failed'}`);
+    io.emit('camera_changed', data);
+  });
+
   socket.on('disconnect', () => {
     console.log(`Client disconnected: ${socket.id}`);
   });
@@ -372,7 +397,7 @@ app.get('/api/spectator/state', (req, res) => {
   res.json(gameState);
 });
 
-// NEW: Leaderboard API
+// NEW: Leaderboard API with Local Fallback
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -385,7 +410,11 @@ app.get('/api/leaderboard', async (req, res) => {
         )
       `);
 
-    if (error) throw error;
+    if (error || !data || data.length === 0) {
+      console.log('[API] Supabase leaderboard empty or failed, using local fallback');
+      const localData = await localDb.getLocalLeaderboard();
+      return res.json(localData);
+    }
 
     // Aggregate data by player nickname
     const leaderboard = {};
@@ -405,12 +434,17 @@ app.get('/api/leaderboard', async (req, res) => {
 
     res.json(sortedLeaderboard);
   } catch (err) {
-    console.error('Error fetching leaderboard:', err);
-    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    console.warn('[API] Leaderboard Supabase error, trying local:', err.message);
+    try {
+      const localData = await localDb.getLocalLeaderboard();
+      res.json(localData);
+    } catch (localErr) {
+      res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
   }
 });
 
-// NEW: History API
+// NEW: History API with Local Fallback
 app.get('/api/history', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -430,11 +464,19 @@ app.get('/api/history', async (req, res) => {
       .order('played_at', { ascending: false })
       .limit(20);
 
-    if (error) throw error;
+    if (error || !data || data.length === 0) {
+      const localHistory = await localDb.getLocalHistory();
+      return res.json(localHistory);
+    }
     res.json(data);
   } catch (err) {
-    console.error('Error fetching history:', err);
-    res.status(500).json({ error: 'Failed to fetch history' });
+    console.warn('[API] History Supabase error, trying local:', err.message);
+    try {
+      const localHistory = await localDb.getLocalHistory();
+      res.json(localHistory);
+    } catch (localErr) {
+      res.status(500).json({ error: 'Failed to fetch history' });
+    }
   }
 });
 
@@ -454,7 +496,7 @@ function predictionMatches(prediction, taskName, confidence) {
   return p.includes(t) || t.includes(p);
 }
 
-async function saveGameToSupabase() {
+async function saveGameToSupabase(state) {
   console.log('[Supabase] saveGameToSupabase called');
   
   // Only save if Supabase is properly configured
@@ -466,8 +508,8 @@ async function saveGameToSupabase() {
   }
 
   try {
-    const p1Nickname = gameState.player1.nickname;
-    const p2Nickname = gameState.player2.nickname;
+    const p1Nickname = state.player1.nickname;
+    const p2Nickname = state.player2.nickname;
     console.log(`[Supabase] Saving results for: ${p1Nickname} vs ${p2Nickname}`);
     
     // 1. Ensure Players Exist
@@ -494,7 +536,7 @@ async function saveGameToSupabase() {
     console.log('[Supabase] Creating match record...');
     const { data: matchData, error: matchErr } = await supabase
       .from('matches')
-      .insert([{ game_mode: gameState.gameMode }])
+      .insert([{ game_mode: state.gameMode }])
       .select()
       .single();
 
@@ -509,14 +551,14 @@ async function saveGameToSupabase() {
       {
         match_id: matchData.match_id,
         player_id: p1Data.player_id,
-        score: gameState.player1.score,
-        is_winner: gameState.winner === 'player1'
+        score: state.player1.score,
+        is_winner: state.winner === 'player1'
       },
       {
         match_id: matchData.match_id,
         player_id: p2Data.player_id,
-        score: gameState.player2.score,
-        is_winner: gameState.winner === 'player2'
+        score: state.player2.score,
+        is_winner: state.winner === 'player2'
       }
     ];
 
@@ -535,7 +577,7 @@ async function saveGameToSupabase() {
   }
 }
 
-setInterval(() => {
+setInterval(async () => {
   gameState.msgRates.player1 = msgCounts.player1;
   gameState.msgRates.player2 = msgCounts.player2;
   msgCounts.player1 = 0;
@@ -553,8 +595,19 @@ setInterval(() => {
       
       broadcastState();
       
-      // Save to Supabase async
-      saveGameToSupabase();
+      // Save to databases (Clone state to prevent race condition with reset)
+      const stateToSave = JSON.parse(JSON.stringify(gameState));
+      console.log('[Server] Starting game save operations...');
+      
+      // 1. Save locally first (Fast and reliable)
+      await localDb.saveGameLocally(stateToSave);
+      
+      // 2. Save to Supabase in background (Don't let network lag block the server tick)
+      saveGameToSupabase(stateToSave).catch(err => {
+        console.error('[Supabase] Background save failed:', err);
+      });
+      
+      console.log('[Server] Local save completed, Supabase save initiated in background.');
       
       gameResetTimeout = setTimeout(() => { initializeGame(); gameResetTimeout = null; }, 5000);
     } else {

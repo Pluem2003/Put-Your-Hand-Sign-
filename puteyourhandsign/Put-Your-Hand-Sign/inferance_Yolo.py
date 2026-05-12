@@ -29,6 +29,17 @@ current_raw_frame = None
 current_frame_id = 0
 last_sent_frame_id = -1
 is_connected = False
+should_restart_camera = False
+new_camera_index = CAMERA_INDEX
+
+# Camera Control State
+camera_settings = {
+    'brightness': 50,
+    'contrast': 50,
+    'exposure': -5
+}
+settings_updated = False
+should_open_native_settings = False
 
 # --- INITIALIZE ---
 print(f"Loading Model: {MODEL_PATH}")
@@ -46,6 +57,32 @@ def disconnect():
     global is_connected
     is_connected = False
     print("\n[WARNING] Disconnected from server.")
+
+@sio.on('set_camera')
+def on_set_camera(data):
+    global new_camera_index, should_restart_camera
+    if data.get('playerId') == PLAYER_ID:
+        index = data.get('cameraIndex')
+        print(f"\n[INFO] Received request to change camera to index: {index}")
+        new_camera_index = index
+        should_restart_camera = True
+
+@sio.on('update_camera_controls')
+def on_update_controls(data):
+    global camera_settings, settings_updated
+    if data.get('playerId') == PLAYER_ID:
+        control_type = data.get('type')
+        value = data.get('value')
+        camera_settings[control_type] = value
+        settings_updated = True
+        print(f"[INFO] Update {control_type} to {value}")
+
+@sio.on('open_camera_settings')
+def on_open_settings(data):
+    global should_open_native_settings
+    if data.get('playerId') == PLAYER_ID:
+        print("[INFO] Received request to open native camera settings")
+        should_open_native_settings = True
 
 # --- THREAD 1: AI INFERENCE ---
 def ai_worker():
@@ -85,8 +122,9 @@ def stream_worker():
             # ย่อภาพและส่งเป็น Binary
             gray = cv2.cvtColor(current_raw_frame, cv2.COLOR_BGR2GRAY)
             _, binary = cv2.threshold(gray, THRESHOLD_VAL, 255, cv2.THRESH_BINARY)
-            small = cv2.resize(binary, (160, 120))
-            _, buffer = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 25])
+            # ส่งภาพขนาด 640x480 พร้อมคุณภาพ 95% ตามคำขอ
+            small = cv2.resize(binary, (640, 480))
+            _, buffer = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 95])
             
             payload = {
                 'playerId': PLAYER_ID,
@@ -104,16 +142,8 @@ def stream_worker():
 
 # --- MAIN THREAD: CAMERA & GUI ---
 def main():
-    global current_raw_frame, current_frame_id
+    global current_raw_frame, current_frame_id, should_restart_camera, new_camera_index, camera_settings, settings_updated, should_open_native_settings
     
-    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    
-    if not cap.isOpened():
-        print(f"Error: Could not open camera {CAMERA_INDEX}")
-        return
-
     # Start Workers
     threading.Thread(target=ai_worker, daemon=True).start()
     threading.Thread(target=stream_worker, daemon=True).start()
@@ -130,36 +160,107 @@ def main():
 
     threading.Thread(target=connect_with_retry, daemon=True).start()
 
-    print("\n--- Running AI with Local Preview ---")
-    print("Press 'q' in the window to stop")
+    print("\n--- AI Module Started ---")
+    
+    cap = None
+    active_index = CAMERA_INDEX
 
     while True:
+        # Check if we need to (re)start the camera
+        if cap is None or should_restart_camera:
+            if cap is not None:
+                cap.release()
+                cv2.destroyAllWindows()
+            
+            target_index = new_camera_index if should_restart_camera else active_index
+            print(f"Opening camera index {target_index}...")
+            
+            cap = cv2.VideoCapture(target_index, cv2.CAP_DSHOW)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            
+            success = cap.isOpened()
+            should_restart_camera = False
+            
+            # Inform server/client
+            if is_connected:
+                sio.emit('camera_response', {
+                    'playerId': PLAYER_ID,
+                    'success': success,
+                    'cameraIndex': target_index,
+                    'error': None if success else f"Could not open camera {target_index}"
+                })
+            
+            if not success:
+                print(f"[ERROR] Could not open camera {target_index}. Waiting for command from UI...")
+                if cap: cap.release()
+                cap = None
+                time.sleep(1)
+                continue
+            
+            print(f"[SUCCESS] Connected to camera {target_index}")
+            active_index = target_index
+            
+            # Apply Initial settings
+            cap.set(cv2.CAP_PROP_BRIGHTNESS, camera_settings['brightness'])
+            cap.set(cv2.CAP_PROP_CONTRAST, camera_settings['contrast'])
+            cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25) 
+            cap.set(cv2.CAP_PROP_EXPOSURE, camera_settings['exposure'])
+
+        # Read Frame
         ret, frame = cap.read()
-        if not ret: break
+        if not ret:
+            print("[WARNING] Failed to read from camera. Retrying...")
+            if cap: cap.release()
+            cap = None
+            time.sleep(1)
+            continue
         
+        # --- CHECK COMMANDS FROM UI ---
+        # 1. Open Native OS Settings Dialog
+        if should_open_native_settings and cap is not None:
+            print("[COMMAND] Attempting to open native camera settings dialog (OpenCV)...")
+            # บังคับให้หน้าต่างเด้งขึ้นมา
+            result = cap.set(cv2.CAP_PROP_SETTINGS, 1)
+            print(f"[DEBUG] cap.set(cv2.CAP_PROP_SETTINGS, 1) returned: {result}")
+            should_open_native_settings = False
+            # รอให้หน้าต่างโหลดขึ้นมาเล็กน้อย
+            time.sleep(0.5)
+
+        # 2. Apply settings updates (Sliders)
+        if settings_updated and cap is not None:
+            cap.set(cv2.CAP_PROP_BRIGHTNESS, camera_settings['brightness'])
+            cap.set(cv2.CAP_PROP_CONTRAST, camera_settings['contrast'])
+            cap.set(cv2.CAP_PROP_EXPOSURE, camera_settings['exposure'])
+            settings_updated = False
+
         current_raw_frame = frame.copy()
-        current_frame_id += 1 # เพิ่ม ID เมื่อได้ภาพใหม่
+        current_frame_id += 1
         
-        # สร้างภาพสำหรับโชว์บนจอคอม
+        # Local Preview Window
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, THRESHOLD_VAL, 255, cv2.THRESH_BINARY)
         preview = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
         
-        # วาดข้อมูลลงบนจอ
         color = (0, 255, 0) if latest_prediction != "None" else (0, 0, 255)
-        cv2.putText(preview, f"P1 AI: {latest_prediction} ({latest_confidence:.2f})", (20, 40), 
+        cv2.putText(preview, f"{PLAYER_ID} AI: {latest_prediction} ({latest_confidence:.2f})", (20, 40), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
         cv2.putText(preview, f"Inference: {latest_inference_time:.1f}ms", (20, 70), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
         
         cv2.imshow(f"Put Your Hand Sign - {PLAYER_ID}", preview)
         
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
             break
+        elif key == ord('s'): # ปุ่มลัด 's' เพื่อเปิดตั้งค่าโดยตรง
+            print("[HOTKEY] Opening native camera settings dialog...")
+            cap.set(cv2.CAP_PROP_SETTINGS, 1)
 
-    cap.release()
+    if cap: cap.release()
     cv2.destroyAllWindows()
     sio.disconnect()
 
 if __name__ == "__main__":
     main()
+

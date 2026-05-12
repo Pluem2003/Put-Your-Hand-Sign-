@@ -19,6 +19,37 @@
                     <canvas id="cameraCanvas" style="display: none; width: 100%; height: auto; border-radius: 8px;"></canvas>
                     <div id="cameraStatus" class="status-badge">AI Feed: Off</div>
                 </div>
+                <div class="camera-settings" style="margin-top: 15px; padding: 15px; background: #f3f4f6; border-radius: 8px; border: 1px solid #e5e7eb;">
+                    <label style="font-size: 14px; font-weight: 600; color: #374151; display: block; margin-bottom: 10px;">Camera Settings (AI Source)</label>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                        <span style="font-size: 13px; color: #6b7280;">Index:</span>
+                        <input type="number" id="cameraIndexInput" class="form-control" value="0" min="0" max="10" style="width: 70px; padding: 8px; border-radius: 6px; border: 1px solid #d1d5db;">
+                        <button id="setCameraButton" class="btn btn-secondary" style="padding: 8px 15px; font-size: 13px;">Apply Camera</button>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <button id="openNativeSettingsBtn" class="btn btn-secondary" style="width: 100%; padding: 8px; font-size: 12px; background: #4b5563; color: white;">Open Advanced Settings (Windows)</button>
+                    </div>
+
+                    <div class="camera-controls" style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <label style="font-size: 12px; color: #4b5563;">Brightness</label>
+                            <input type="range" id="brightnessSlider" min="0" max="100" value="50" style="flex: 1; margin: 0 15px;">
+                            <span id="brightnessValue" style="font-size: 12px; min-width: 25px;">50</span>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <label style="font-size: 12px; color: #4b5563;">Contrast</label>
+                            <input type="range" id="contrastSlider" min="0" max="100" value="50" style="flex: 1; margin: 0 15px;">
+                            <span id="contrastValue" style="font-size: 12px; min-width: 25px;">50</span>
+                        </div>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <label style="font-size: 12px; color: #4b5563;">Exposure</label>
+                            <input type="range" id="exposureSlider" min="-10" max="0" value="-5" style="flex: 1; margin: 0 15px;">
+                            <span id="exposureValue" style="font-size: 12px; min-width: 25px;">-5</span>
+                        </div>
+                    </div>
+                    <p style="font-size: 11px; color: #9ca3af; margin-top: 8px;">* Exposure control may require camera-specific support.</p>
+                </div>
             </div>
 
             <div class="game-info">

@@ -23,6 +23,19 @@ class PlayerClient {
         this.inferenceToggle = document.getElementById('inferenceToggle');
         this.inferenceDisplay = document.getElementById('inferenceDisplay');
         
+        // Camera Settings
+        this.cameraIndexInput = document.getElementById('cameraIndexInput');
+        this.setCameraButton = document.getElementById('setCameraButton');
+        this.openNativeSettingsBtn = document.getElementById('openNativeSettingsBtn');
+        
+        // Camera Controls
+        this.brightnessSlider = document.getElementById('brightnessSlider');
+        this.contrastSlider = document.getElementById('contrastSlider');
+        this.exposureSlider = document.getElementById('exposureSlider');
+        this.brightnessValue = document.getElementById('brightnessValue');
+        this.contrastValue = document.getElementById('contrastValue');
+        this.exposureValue = document.getElementById('exposureValue');
+        
         // Modal Elements
         this.resultModal = document.getElementById('resultModal');
         this.closeModalBtn = document.getElementById('closeModalBtn');
@@ -64,6 +77,16 @@ class PlayerClient {
             }
         });
 
+        this.socket.on('camera_changed', (data) => {
+            if (data.playerId === this.playerId) {
+                if (data.success) {
+                    this.showStatus(`Camera successfully changed to index ${data.cameraIndex}`, 'success');
+                } else {
+                    this.showStatus(`Failed to change camera: ${data.error}`, 'error');
+                }
+            }
+        });
+
         this.socket.on('disconnect', () => {
             this.showStatus('Disconnected from server', 'error');
         });
@@ -90,6 +113,46 @@ class PlayerClient {
             this.closeModalBtn.addEventListener('click', () => {
                 this.resultModal.style.display = 'none';
             });
+        }
+
+        if (this.setCameraButton) {
+            this.setCameraButton.addEventListener('click', () => {
+                const index = parseInt(this.cameraIndexInput.value);
+                if (isNaN(index)) return;
+                
+                this.showStatus(`Requesting camera change to index ${index}...`, 'info');
+                this.socket.emit('set_camera', {
+                    playerId: this.playerId,
+                    cameraIndex: index
+                });
+            });
+        }
+
+        if (this.openNativeSettingsBtn) {
+            this.openNativeSettingsBtn.addEventListener('click', () => {
+                this.socket.emit('open_camera_settings', {
+                    playerId: this.playerId
+                });
+            });
+        }
+
+        const updateControl = (type, value) => {
+            if (this[`${type}Value`]) this[`${type}Value`].textContent = value;
+            this.socket.emit('update_camera_controls', {
+                playerId: this.playerId,
+                type: type,
+                value: parseFloat(value)
+            });
+        };
+
+        if (this.brightnessSlider) {
+            this.brightnessSlider.addEventListener('input', (e) => updateControl('brightness', e.target.value));
+        }
+        if (this.contrastSlider) {
+            this.contrastSlider.addEventListener('input', (e) => updateControl('contrast', e.target.value));
+        }
+        if (this.exposureSlider) {
+            this.exposureSlider.addEventListener('input', (e) => updateControl('exposure', e.target.value));
         }
     }
 
