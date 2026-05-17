@@ -78,7 +78,7 @@ pip install mediapipe opencv-python requests
 ```bash
 npm start
 ```
-Server runs at: http://localhost:3000
+Server runs at: http://localhost:6527
 
 ### Step 3: Start Python Detection (in separate terminal)
 ```bash
@@ -86,10 +86,10 @@ python pose_detection_client.py --player player1
 ```
 
 ### Step 4: Open in Browser
-- **Player 1**: http://localhost:3000/player1
-- **Player 2**: http://localhost:3000/player2
-- **Spectator**: http://localhost:3000/spectator
-- **Debug**: http://localhost:3000/debug
+- **Player 1**: http://localhost:6527/player1
+- **Player 2**: http://localhost:6527/player2
+- **Spectator**: http://localhost:6527/spectator
+- **Debug**: http://localhost:6527/debug
 
 ### Step 5: Play!
 1. Click "Ready To Play" on both player pages
@@ -164,7 +164,7 @@ PLAYER 1              PYTHON              GAME SERVER          SPECTATOR
 ### For Players
 
 **Setup:**
-1. Open http://localhost:3000/player1 (or player2)
+1. Open http://localhost:6527/player1 (or player2)
 2. Click "Start Camera" - allow camera access
 3. Position yourself in frame
 4. Click "Ready To Play"
@@ -185,7 +185,7 @@ PLAYER 1              PYTHON              GAME SERVER          SPECTATOR
 ### For Spectators
 
 **Setup:**
-1. Open http://localhost:3000/spectator
+1. Open http://localhost:6527/spectator
 2. Watch in real-time!
 
 **What You See:**
@@ -203,7 +203,7 @@ PLAYER 1              PYTHON              GAME SERVER          SPECTATOR
 ### For Game Control (Debug Console)
 
 **Setup:**
-1. Open http://localhost:3000/debug
+1. Open http://localhost:6527/debug
 2. Control everything from here
 
 **What You Can Do:**
@@ -241,7 +241,7 @@ Just modify the detection and send same format to server.
 
 Your system sends HTTP POST to:
 ```
-POST http://localhost:3000/api/player1/pose
+POST http://localhost:6527/api/player1/pose
 {
   "prediction": "Peace Sign",     ← Your detected pose
   "confidence": 0.95,              ← Your confidence (0-1)
@@ -358,7 +358,7 @@ Centralized object on server containing:
 - [ ] npm run `npm install`
 - [ ] pip packages installed (`pip install mediapipe opencv-python requests`)
 - [ ] Webcam working (test in Windows camera app)
-- [ ] Port 3000 not in use
+- [ ] Port 6527 not in use
 - [ ] Modern browser (Chrome, Firefox, Edge, Safari)
 - [ ] Read QUICKSTART.md
 
@@ -398,7 +398,7 @@ Edit `server.js` - add `player3`, `player4`, etc. (would need UI updates too).
 
 | Problem | Solution |
 |---------|----------|
-| Server won't start | Check port 3000 not in use: `netstat -ano \| findstr :3000` |
+| Server won't start | Check port 6527 not in use: `netstat -ano \| findstr :6527` |
 | Camera permission denied | Check browser settings, try incognito mode |
 | Python client fails | Verify server running, check installation: `pip install mediapipe` |
 | No poses detected | Check lighting, ensure hand visible, adjust confidence |
@@ -415,7 +415,7 @@ See **README.md** for detailed troubleshooting.
 2. **Full setup**: See README.md
 3. **Technical detail**: See ARCHITECTURE.md
 4. **API question**: See API_DOCUMENTATION.md
-5. **Debug issue**: Open http://localhost:3000/debug
+5. **Debug issue**: Open http://localhost:6527/debug
 6. **Code example**: See custom_detection_examples.py
 
 ---
@@ -462,7 +462,7 @@ Find your IP: `ipconfig`
 npm start
 
 # On other machines, open:
-http://<your-machine-ip>:3000
+http://<your-machine-ip>:6527
 ```
 
 ### Cloud Deployment (Heroku, AWS, etc.)
@@ -479,7 +479,7 @@ Everything is ready. Just:
 
 1. **Open Terminal**
 2. **Run**: `npm start`
-3. **Open Browser**: `http://localhost:3000`
+3. **Open Browser**: `http://localhost:6527`
 4. **Click**: A page (player1, player2, spectator, or debug)
 5. **Play**: Perform hand poses!
 
@@ -503,7 +503,7 @@ Everything is ready. Just:
 2. → **Run `npm install`** (install dependencies)
 3. → **Start server** (`npm start`)
 4. → **Run detection** (`python pose_detection_client.py --player player1`)
-5. → **Open browser** (http://localhost:3000)
+5. → **Open browser** (http://localhost:6527)
 6. → **Play!**
 
 ---

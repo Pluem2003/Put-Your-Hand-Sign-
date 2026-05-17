@@ -20,13 +20,13 @@ pip install mediapipe opencv-python requests
 ```bash
 npm start
 ```
-Server runs at `http://localhost:3000`
+Server runs at `http://localhost:6527`
 
 ### Step 4: Open in Browser
-- **Player 1**: http://localhost:3000/player1
-- **Player 2**: http://localhost:3000/player2
-- **Spectator**: http://localhost:3000/spectator
-- **Debug**: http://localhost:3000/debug
+- **Player 1**: http://localhost:6527/player1
+- **Player 2**: http://localhost:6527/player2
+- **Spectator**: http://localhost:6527/spectator
+- **Debug**: http://localhost:6527/debug
 
 ### Step 5: Run Python Pose Detection (in separate terminal)
 ```bash
@@ -50,7 +50,7 @@ python pose_detection_client.py --player player2
 ## Test Without Camera
 
 Use the Debug Console:
-1. Open http://localhost:3000/debug
+1. Open http://localhost:6527/debug
 2. Set both players to Ready
 3. Start Game
 4. Use "Pose Simulator" to send test poses
@@ -60,7 +60,7 @@ Use the Debug Console:
 
 | Page | Purpose |
 |------|---------|
-| `http://localhost:3000/` | Navigation hub |
+| `http://localhost:6527/` | Navigation hub |
 | `/player1` | Player 1 interface (camera, score, timer) |
 | `/player2` | Player 2 interface (camera, score, timer) |
 | `/spectator` | Spectator view (watch both players) |
@@ -84,7 +84,7 @@ Your hand pose detector (Python/other) sends data to server:
 ```python
 import requests
 
-response = requests.post('http://localhost:3000/api/player1/pose', json={
+response = requests.post('http://localhost:6527/api/player1/pose', json={
     'prediction': 'Peace Sign',    # The pose you detected
     'confidence': 0.95,             # How confident (0-1)
     'cameraFrame': None             # Optional: base64 frame
@@ -105,7 +105,7 @@ Edit `server.js` function `const tasks = [...]` to add more poses:
 
 | Problem | Solution |
 |---------|----------|
-| Server won't start | Port 3000 might be in use: `npm start` with `PORT=3001` |
+| Server won't start | Port 6527 might be in use: `npm start` with `PORT=3001` |
 | Camera access denied | Check browser permissions, try incognito window |
 | Poses not detected | Run Python script: `python pose_detection_client.py` |
 | Timer not working | Check debug console - look at game state |
@@ -115,8 +115,8 @@ Edit `server.js` function `const tasks = [...]` to add more poses:
 ### Multi-Device
 Run server on one machine, access from others:
 ```
-http://<your-machine-ip>:3000/player1
-http://<your-machine-ip>:3000/player2
+http://<your-machine-ip>:6527/player1
+http://<your-machine-ip>:6527/player2
 ```
 
 ### Custom Detection

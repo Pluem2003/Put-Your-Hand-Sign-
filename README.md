@@ -49,42 +49,30 @@ SUPABASE_ANON_KEY=your-anon-key
 ```
 
 ## 🏃‍♂️ How to Run (The `.bat` Files Guide)
-To make running the project as easy as possible, we have provided several `.bat` files. You need to run the **Server** on one machine, and the **Client (Camera/AI)** on the players' machines.
+To make running the project as easy as possible, we have provided several `.bat` files. You can choose whether you want the game to be accessible over the internet, or just run it locally on your own computer.
 
-### A. Server Side (Hosting the Game)
-This is the central brain of the game. It manages scores, timers, and databases. Choose **ONE** of the following hosting methods:
+### 1. Accessible from Anywhere (Server / Public Network)
+Use this method if you want to play with friends over the internet or present the project using the university server.
 
-**Option 1: University Server (Recommended for Presentation)**
-If deploying to the university Linux server (e.g., `10.61.200.60`), you don't need `.bat` files. Simply use PM2 to keep it running in the background:
-```bash
-npx pm2 start server.js --name "hand-pose-game"
-```
-*(Players will access the game via `http://10.61.200.60:6527`)*
+*   **Host the Server:**
+    *   **If using University Server:** Run `npx pm2 start server.js` on the Linux server.
+    *   **If hosting on your PC:**
+        *   Double-click **`run-server-only.bat`** to start the Node.js server.
+        *   Double-click **`run-cloudflare.bat`** OR **`run-ngrok.bat`** to create a public tunnel (e.g., `https://xyz.trycloudflare.com`).
+*   **Connect the Cameras & Players:**
+    *   Open your browser and go to the Server URL (e.g., `http://10.61.200.60:6527` or the Tunnel URL).
+    *   To start the AI cameras, double-click **`run-player1-remote.bat`** and **`run-player2-remote.bat`**.
+    *   *(Note: These `-remote` files will open a black window asking for the `SERVER_URL`. Paste your public URL or University Server IP here so the AI knows where to send the data).*
 
-**Option 2: Localhost with Public Tunnels (Playing over the internet)**
-If you are running the server on your personal Windows computer and want friends to join over the internet:
-1. Double-click `run-server-only.bat` to start the Node.js server.
-2. Double-click **either** `run-cloudflare.bat` OR `run-ngrok.bat` to create a secure tunnel.
-3. The tunnel will generate a public URL (e.g., `https://xyz.trycloudflare.com`). Share this URL with your players!
+### 2. Accessible Only on Your Machine (Local Network)
+Use this method for testing or playing on a single computer where the server and cameras are on the same machine.
 
-### B. Local/Client Side (The Camera & AI)
-This must be run on the computers that actually have webcams connected to them (Player 1 and Player 2).
-
-1. **Install AI Libraries:** Open a terminal in the project folder and run:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Start the AI Camera:**
-   - For Player 1: Double-click **`run-player1-remote.bat`**
-   - For Player 2: Double-click **`run-player2-remote.bat`**
-3. **Enter the Server URL:** A black command window will pop up asking for the `SERVER_URL`. 
-   - If playing on the University Server, type: `http://10.61.200.60:6527`
-   - If playing via Tunnel, type the public URL (e.g., `https://xyz.trycloudflare.com`)
-   - *(Note: It will also ask for a Camera Index. Usually, typing `0` is for your built-in webcam, or `1` for an external USB webcam).*
-4. **Play!** 
-   - Open your web browser and go to the Server URL.
-   - Go to the Player 1 or Player 2 page.
-   - Click "Ready To Play", and start making hand poses!
+*   **Host the Server:**
+    *   Double-click **`run-server-only.bat`**. This starts the server locally at `http://localhost:6527`.
+*   **Connect the Cameras & Players:**
+    *   Open your browser and go to `http://localhost:6527`.
+    *   To start the AI cameras, double-click **`run-player1-yolo.bat`** and **`run-player2-yolo.bat`**.
+    *   *(Note: These `-yolo` files are hardcoded to connect to `localhost` automatically, so you don't need to type the URL manually).*
 
 ## 🗄️ Database Recovery (Local to Cloud Sync)
 Since Supabase Free Tier pauses after 7 days of inactivity, the server automatically saves matches locally using SQLite (`game_results.db`). 
@@ -205,6 +193,10 @@ node sync_to_supabase.js
 
 ## 🔮 แผนในอนาคต (Future Work)
 ในอนาคตมีแผนพัฒนาให้สามารถใช้กล้อง Webcam ปกติเล่นได้ในสภาพแสงทั่วไปโดยไม่ต้องจัดฉากแสงหรือฉากหลังเพื่อสร้างเงามือ โดยจะเปลี่ยนไปใช้เทคโนโลยี **Hand Landmark Detection** (การตรวจจับโครงร่างข้อต่อและจุดสำคัญของมือ หรือ Skeleton Tracking) ซึ่งช่วยเพิ่มความสะดวกและลดข้อจำกัดด้านสถานที่ในการเล่น
+
+---
+*จัดทำโดย กลุ่ม 15 - วิชา FRA502 Web Programming*
+k Detection** (การตรวจจับโครงร่างข้อต่อและจุดสำคัญของมือ หรือ Skeleton Tracking) ซึ่งช่วยเพิ่มความสะดวกและลดข้อจำกัดด้านสถานที่ในการเล่น
 
 ---
 *จัดทำโดย กลุ่ม 15 - วิชา FRA502 Web Programming*

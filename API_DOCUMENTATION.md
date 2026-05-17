@@ -2,7 +2,7 @@
 
 ## Base URL
 ```
-http://localhost:3000
+http://localhost:6527
 ```
 
 ## Protocol
@@ -46,7 +46,7 @@ All requests use HTTP POST/GET with JSON bodies and responses.
 import requests
 
 response = requests.post(
-    'http://localhost:3000/api/player1/pose',
+    'http://localhost:6527/api/player1/pose',
     json={
         'prediction': 'Peace Sign',
         'confidence': 0.92,
@@ -118,7 +118,7 @@ Same as Player 1, but for Player 2. See above.
 **Example (Python)**:
 ```python
 requests.post(
-    'http://localhost:3000/api/player1/ready',
+    'http://localhost:6527/api/player1/ready',
     json={'ready': True}
 )
 ```
@@ -516,7 +516,7 @@ fetch('/api/debug/player/ready/2', {
 // Example: Simulate a complete game session
 
 async function playGame() {
-    const server = 'http://localhost:3000';
+    const server = 'http://localhost:6527';
     
     // 1. Set both players ready
     await fetch(`${server}/api/debug/player/ready/1`, {
@@ -638,7 +638,7 @@ const result = await safeRequest('/api/debug/game/start', {
 import requests
 import json
 
-BASE_URL = 'http://localhost:3000'
+BASE_URL = 'http://localhost:6527'
 
 # Send pose
 def send_pose(player_id, pose_name, confidence):
@@ -745,7 +745,7 @@ For API issues:
 3. Verify server running: `npm start`
 4. Test with curl:
    ```bash
-   curl -X GET http://localhost:3000/api/debug/state
+   curl -X GET http://localhost:6527/api/debug/state
    ```
 
 ---

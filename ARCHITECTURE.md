@@ -40,7 +40,7 @@
                                  ▼
                     ┌──────────────────────────┐
                     │  NODE.JS/EXPRESS SERVER  │
-                    │  (localhost:3000)        │
+                    │  (localhost:6527)        │
                     └──────────────┬───────────┘
                                    │
                     ┌──────────────┴──────────────┐
@@ -439,7 +439,7 @@ python pose_detection_client.py --player player2
 ### Same Network:
 1. Find server machine IP: `ipconfig`
 2. Run server on that machine
-3. Access from other machines: `http://<ip>:3000`
+3. Access from other machines: `http://<ip>:6527`
 
 ### Internet/Cloud:
 1. Deploy Node.js to cloud (Heroku, AWS, DigitalOcean)
@@ -450,7 +450,7 @@ python pose_detection_client.py --player player2
 ## Troubleshooting Guide
 
 ### Server Issues
-- Check port 3000 not in use
+- Check port 6527 not in use
 - Verify Node.js installed
 - Check for errors in console
 

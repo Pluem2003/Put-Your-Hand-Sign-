@@ -7,13 +7,13 @@ This guide explains how to run the hand pose detection system using YOLO and sen
 ```
 ┌─────────────────────────────────────┐
 │  Computer 1: Game Server (Node.js)  │
-│  Port 3000                          │
+│  Port 6527                          │
 │  - Main game logic                  │
 │  - Receives predictions & frames    │
 │  - Serves web interfaces            │
 └──────────────┬──────────────────────┘
                │
-        HTTP API (port 3000)
+        HTTP API (port 6527)
                │
       ┌────────┴────────┐
       │                 │
@@ -42,7 +42,7 @@ node server.js
 ```
 You should see:
 ```
-Game server running on port 3000
+Game server running on port 6527
 ✓ Ready to receive poses from players
 ```
 
@@ -71,10 +71,10 @@ python inferance_Yolo.py --player player2 --camera 0
 ```
 
 ### Step 3: Open the Game Pages
-- **Spectator View** (main display): http://localhost:3000/spectator.html
-- **Player 1 Page**: http://localhost:3000/player1.html
-- **Player 2 Page**: http://localhost:3000/player2.html
-- **Debug Console**: http://localhost:3000/debug.html
+- **Spectator View** (main display): http://localhost:6527/spectator.html
+- **Player 1 Page**: http://localhost:6527/player1.html
+- **Player 2 Page**: http://localhost:6527/player2.html
+- **Debug Console**: http://localhost:6527/debug.html
 
 ## Command-Line Options
 
@@ -89,7 +89,7 @@ python inferance_Yolo.py [OPTIONS]
 - `--camera N` - Camera index to use (default: 1)
   - Use `0` for first camera
   - Use `1` for second camera
-- `--server URL` - Server URL (default: http://localhost:3000)
+- `--server URL` - Server URL (default: http://localhost:6527)
 
 **Examples:**
 ```bash
@@ -100,7 +100,7 @@ python inferance_Yolo.py --player player1 --camera 1
 python inferance_Yolo.py --player player2 --camera 0
 
 # Custom server
-python inferance_Yolo.py --player player1 --server http://192.168.1.100:3000
+python inferance_Yolo.py --player player1 --server http://192.168.1.100:6527
 ```
 
 ## Troubleshooting
@@ -113,7 +113,7 @@ python inferance_Yolo.py --player player1 --server http://192.168.1.100:3000
 
 2. **Check Python console:**
    - Look for errors or connection messages
-   - Verify it says: `📡 Server: http://localhost:3000`
+   - Verify it says: `📡 Server: http://localhost:6527`
 
 3. **Open browser console (F12):**
    - Go to Spectator page
@@ -123,7 +123,7 @@ python inferance_Yolo.py --player player1 --server http://192.168.1.100:3000
 
 4. **Verify server is running:**
    ```powershell
-   curl http://localhost:3000/api/spectator/state
+   curl http://localhost:6527/api/spectator/state
    ```
    Should return JSON data
 
@@ -132,11 +132,11 @@ python inferance_Yolo.py --player player1 --server http://192.168.1.100:3000
 If you see: `❌ Cannot connect to server`
 
 1. Make sure Node.js server is running: `node server.js`
-2. Check firewall isn't blocking port 3000
+2. Check firewall isn't blocking port 6527
 3. If on different computers:
    - Update `--server` argument to the server's IP:
    ```bash
-   python inferance_Yolo.py --player player1 --server http://192.168.1.X:3000
+   python inferance_Yolo.py --player player1 --server http://192.168.1.X:6527
    ```
 
 ### Camera Not Found

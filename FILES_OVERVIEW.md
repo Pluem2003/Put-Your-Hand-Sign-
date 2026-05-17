@@ -56,7 +56,7 @@ PutYourHandSign/
   - Timer management
   - Score calculation and winner detection
   - Task assignment
-- **Listens on**: http://localhost:3000
+- **Listens on**: http://localhost:6527
 - **Key Exports**: None (runs as main application)
 - **Size**: ~8 KB
 
@@ -100,7 +100,7 @@ PutYourHandSign/
   1. Checks if Node.js is installed
   2. Installs npm dependencies if needed
   3. Displays server URLs
-  4. Starts server on port 3000
+  4. Starts server on port 6527
 - **Usage**: Double-click in Windows Explorer
 - **Size**: ~1.5 KB
 
@@ -399,7 +399,7 @@ After downloading, follow this order:
 1. **Read** [QUICKSTART.md](QUICKSTART.md) (5 minutes)
 2. **Install** dependencies (2 minutes)
 3. **Start** the server (`npm start`)
-4. **Open** http://localhost:3000 in browser
+4. **Open** http://localhost:6527 in browser
 5. **Run** Python detection (`python pose_detection_client.py --player player1`)
 6. **Play** the game!
 7. **Reference** [API_DOCUMENTATION.md](API_DOCUMENTATION.md) as needed

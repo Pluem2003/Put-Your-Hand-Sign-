@@ -156,26 +156,26 @@ Complete this checklist to ensure your system is ready to play!
 - [ ] Wait for server to start
 - [ ] Should see messages:
   ```
-  Hand Pose Game server running on http://localhost:3000
+  Hand Pose Game server running on http://localhost:6527
   Available routes:
-    http://localhost:3000/ - Main hub
-    http://localhost:3000/player1 - Player 1 page
+    http://localhost:6527/ - Main hub
+    http://localhost:6527/player1 - Player 1 page
     ...
   ```
 
 ### Server Success Check
 - [ ] No error messages
-- [ ] "running on http://localhost:3000" message appears
+- [ ] "running on http://localhost:6527" message appears
 - [ ] Terminal doesn't exit
-- [ ] Port 3000 is working
+- [ ] Port 6527 is working
 
 **If server won't start**:
-- [ ] Check if port 3000 is in use:
+- [ ] Check if port 6527 is in use:
   ```bash
-  netstat -ano | findstr :3000
+  netstat -ano | findstr :6527
   ```
 - [ ] If in use, either:
-  - [ ] Kill the process using port 3000
+  - [ ] Kill the process using port 6527
   - [ ] Use different port: `set PORT=3001` then `npm start`
 
 ---
@@ -191,7 +191,7 @@ Complete this checklist to ensure your system is ready to play!
 - [ ] Should see messages:
   ```
   Starting pose detection for player1...
-  Server: http://localhost:3000
+  Server: http://localhost:6527
   Press 'q' to quit
   ```
 - [ ] A camera window should open showing your face/hand
@@ -217,7 +217,7 @@ Complete this checklist to ensure your system is ready to play!
 ## 🌐 Step 8: Test in Browser
 
 ### Open URLs
-- [ ] Open http://localhost:3000/ in your browser
+- [ ] Open http://localhost:6527/ in your browser
   - [ ] Should see "Hand Pose Game" home page
   - [ ] Should see 4 navigation cards
 
@@ -254,7 +254,7 @@ Complete this checklist to ensure your system is ready to play!
 ## 🎮 Step 9: Test Game Without Camera
 
 ### Using Debug Console
-- [ ] Open http://localhost:3000/debug
+- [ ] Open http://localhost:6527/debug
 - [ ] Click "Set Ready" for Player 1
   - [ ] Should show "✓ Ready" status
   - [ ] Activity log shows action
@@ -289,7 +289,7 @@ Complete this checklist to ensure your system is ready to play!
 ## 📹 Step 10: Test With Real Camera
 
 ### Player 1 Setup
-- [ ] Open http://localhost:3000/player1
+- [ ] Open http://localhost:6527/player1
 - [ ] Click "Start Camera"
   - [ ] Browser asks for camera permission
   - [ ] Click "Allow"
@@ -301,7 +301,7 @@ Complete this checklist to ensure your system is ready to play!
   - [ ] Status shows "Ready! Waiting for other player..."
 
 ### Player 2 Setup (in another browser/device or same with 2 windows)
-- [ ] Open http://localhost:3000/player2
+- [ ] Open http://localhost:6527/player2
 - [ ] Click "Start Camera"
   - [ ] Same as Player 1
   
@@ -346,7 +346,7 @@ Complete this checklist to ensure your system is ready to play!
 
 ## 👁️ Step 11: Test Spectator View
 
-- [ ] Open http://localhost:3000/spectator (3rd window)
+- [ ] Open http://localhost:6527/spectator (3rd window)
 - [ ] While Player 1 and Player 2 are playing:
   - [ ] Should show both players' scores
   - [ ] Should show current predictions
@@ -370,7 +370,7 @@ Complete this checklist to ensure your system is ready to play!
 
 ## ⚙️ Step 12: Test Debug Console
 
-- [ ] Open http://localhost:3000/debug
+- [ ] Open http://localhost:6527/debug
 - [ ] Test Game Control:
   - [ ] Click "Reset Game" → State resets
   - [ ] Activity log shows action
@@ -408,10 +408,10 @@ Complete this checklist to ensure your system is ready to play!
 
 ### Complete Game Scenario
 1. [ ] Open 4 browser windows:
-   - Window 1: http://localhost:3000/player1
-   - Window 2: http://localhost:3000/player2
-   - Window 3: http://localhost:3000/spectator
-   - Window 4: http://localhost:3000/debug
+   - Window 1: http://localhost:6527/player1
+   - Window 2: http://localhost:6527/player2
+   - Window 3: http://localhost:6527/spectator
+   - Window 4: http://localhost:6527/debug
 
 2. [ ] Player 1 Window:
    - [ ] Click "Start Camera"
@@ -461,7 +461,7 @@ If server won't start:
 - [ ] Check Node.js installed: `node --version`
 - [ ] Check npm installed: `npm install --version`
 - [ ] Check npm install ran: `dir node_modules` shows express
-- [ ] Check port 3000 free: `netstat -ano | findstr :3000`
+- [ ] Check port 6527 free: `netstat -ano | findstr :6527`
 - [ ] Try different port: `set PORT=3001` then `npm start`
 
 ### Camera Issues
@@ -478,17 +478,17 @@ If Python detection won't run:
 - [ ] Check Python installed: `python --version`
 - [ ] Check MediaPipe: `pip list | findstr mediapipe`
 - [ ] Reinstall: `pip install --upgrade mediapipe`
-- [ ] Check server running: `http://localhost:3000`
+- [ ] Check server running: `http://localhost:6527`
 - [ ] Check URL in Python script
 
 ### Network Issues
 If can't connect to localhost:
-- [ ] Check firewall allowing port 3000
+- [ ] Check firewall allowing port 6527
 - [ ] Check Windows Firewall:
   ```bash
   netsh advfirewall add rule name="Node.js" dir=in action=allow program="node.exe"
   ```
-- [ ] Try 127.0.0.1:3000 instead of localhost:3000
+- [ ] Try 127.0.0.1:6527 instead of localhost:6527
 
 ---
 
@@ -543,7 +543,7 @@ If you've checked all boxes, your system is **ready to play**!
 
 1. **Read Documentation**: START_HERE.md → README.md → ARCHITECTURE.md
 2. **Check Logs**: Look at terminal output and browser console (F12)
-3. **Debug Console**: Use http://localhost:3000/debug to inspect state
+3. **Debug Console**: Use http://localhost:6527/debug to inspect state
 4. **Isolate Issue**: Test each component separately
 5. **Search Error**: Google the exact error message
 
@@ -556,10 +556,10 @@ If you've checked all boxes, your system is **ready to play**!
 - [ ] Terminal 1: `npm start` (server running)
 - [ ] Terminal 2: `python pose_detection_client.py --player player1`
 - [ ] Terminal 3: `python pose_detection_client.py --player player2`
-- [ ] Browser 1: http://localhost:3000/player1
-- [ ] Browser 2: http://localhost:3000/player2  
-- [ ] Browser 3: http://localhost:3000/spectator
-- [ ] Browser 4: http://localhost:3000/debug (optional)
+- [ ] Browser 1: http://localhost:6527/player1
+- [ ] Browser 2: http://localhost:6527/player2  
+- [ ] Browser 3: http://localhost:6527/spectator
+- [ ] Browser 4: http://localhost:6527/debug (optional)
 - [ ] Both players click "Start Camera"
 - [ ] Both players click "Ready To Play"
 - [ ] Game starts automatically!
