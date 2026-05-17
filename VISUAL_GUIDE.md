@@ -88,8 +88,8 @@
             │     └───────────┬───────────┘    │
             │                 │                 │
             ├─────────────────┼─────────────────┤
-            │   HTTP REST API (JSON)            │
-            │   Polling every 500ms             │
+            │   WebSocket (Socket.io)           │
+            │   Real-time event syncing         │
             │                 │                 │
             └─────────────────┼─────────────────┘
                               │
@@ -382,28 +382,18 @@ RESET FOR NEXT ROUND
 
 ---
 
-## 🔌 API Request/Response Flow
+## 🔌 API & WebSocket Request/Response Flow
 
 ```
 CLIENT                              SERVER
   │                                    │
-  │  GET /api/debug/state             │
+  │  Connect via Socket.io             │
   ├───────────────────────────────────►│
-  │                                    │ Lookup game state
-  │                                    │ Build JSON response
-  │                                    │
-  │  {gameActive, timer, player1, ...} │
+  │                                    │ Accept Connection
+  │  emit('gameState', { state })      │
   │◄───────────────────────────────────┤
-  │  200 OK + JSON                     │
-  │
-  │  (500ms later)
-  │
-  │  GET /api/debug/state             │
-  ├───────────────────────────────────►│
-  │  ...
-  │
-  │
-  │  POST /api/player1/pose           │
+  │                                    │
+  │  POST /api/player1/pose            │ (Python AI Client)
   ├───────────────────────────────────►│
   │  {prediction, confidence}          │
   │                                    │ Check prediction
@@ -411,16 +401,15 @@ CLIENT                              SERVER
   │                                    │ Update score
   │  {success: true}                   │
   │◄───────────────────────────────────┤
-  │  200 OK + JSON                     │
-  │
-  │  (500ms later)
-  │
-  │  GET /api/spectator/state         │
-  ├───────────────────────────────────►│
-  │  {minimal state}                   │
+  │                                    │
+  │  Server Broadcast                  │
+  │  emit('playerPoseUpdate', ...)     │ (To Spectator/Players)
   │◄───────────────────────────────────┤
-  │  200 OK + JSON                     │
-  │  (Shows updated scores)            │
+  │                                    │
+  │  If Score Updates:                 │
+  │  emit('gameState', { new state })  │ (To All Connected Clients)
+  │◄───────────────────────────────────┤
+  │  (UI updates instantly)            │
 ```
 
 ---
@@ -472,9 +461,9 @@ Player → Camera → Python → Server → Database → All Clients
         • Update player score
         • Update game state
             ↓
-        Clients poll state every 500ms
+        Server emits state via WebSockets
             ↓
-        UI Updates everywhere
+        UI Updates everywhere instantly
             ↓
         All pages show new scores
 ```
