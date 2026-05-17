@@ -623,6 +623,6 @@ app.get('/api/player/:playerNum/data', (req, res) => {
   res.json({ ...player, ...gameState, player1: undefined, player2: undefined, [`player${playerNum}`]: player });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 6527;
 server.listen(PORT, () => { console.log(`Hand Pose Game server running on http://localhost:${PORT}`); });
 
